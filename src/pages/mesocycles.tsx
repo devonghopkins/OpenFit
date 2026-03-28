@@ -195,22 +195,26 @@ export default function MesocyclesPage() {
 
             <div>
               <label className="text-sm font-medium">Focus Muscles (higher starting volume)</label>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {muscleGroups?.filter(mg => !mg.injured).map(mg => (
-                  <button
-                    key={mg.name}
-                    type="button"
-                    onClick={() => toggleFocus(mg.name)}
-                    className={`rounded-md border px-2 py-1 text-xs transition-colors ${
-                      focusMuscles.includes(mg.name)
-                        ? 'border-volume-warning bg-volume-warning/20 text-volume-warning'
-                        : 'border-input text-muted-foreground hover:bg-accent'
-                    }`}
-                  >
-                    {mg.name}
-                  </button>
-                ))}
-              </div>
+              {!muscleGroups ? (
+                <p className="mt-1 text-xs text-muted-foreground">Loading muscle groups...</p>
+              ) : (
+                <div className="mt-1 grid grid-cols-3 gap-1.5">
+                  {muscleGroups.filter(mg => !mg.injured).map(mg => (
+                    <button
+                      key={mg.name}
+                      type="button"
+                      onClick={() => toggleFocus(mg.name)}
+                      className={`rounded-md border px-2 py-1.5 text-xs transition-colors ${
+                        focusMuscles.includes(mg.name)
+                          ? 'border-volume-warning bg-volume-warning/20 text-volume-warning'
+                          : 'border-input text-muted-foreground hover:bg-accent'
+                      }`}
+                    >
+                      {mg.name}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
