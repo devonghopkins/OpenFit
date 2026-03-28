@@ -40,17 +40,22 @@ export default function MesocyclesPage() {
   }
 
   const handleCreate = async () => {
-    const meso = await createMesocycle.mutateAsync({
-      name,
-      weeks,
-      trainingDays,
-      progression,
-      focusMuscles,
-    })
-    await generateMesocycle.mutateAsync(meso.id)
-    setCreating(false)
-    setName('')
-    navigate(`/mesocycles/${meso.id}`)
+    try {
+      const meso = await createMesocycle.mutateAsync({
+        name,
+        weeks,
+        trainingDays,
+        progression,
+        focusMuscles,
+      })
+      await generateMesocycle.mutateAsync(meso.id)
+      setCreating(false)
+      setName('')
+      navigate(`/mesocycles/${meso.id}`)
+    } catch (err) {
+      console.error('Mesocycle creation failed:', err)
+      alert(`Failed to create mesocycle: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
   }
 
   const statusColors: Record<string, 'safe' | 'warning' | 'info' | 'secondary'> = {
