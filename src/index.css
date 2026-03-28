@@ -55,6 +55,11 @@ input, textarea, [contenteditable] {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Safari iOS momentum scrolling for dialogs */
+[role="dialog"] {
+  -webkit-overflow-scrolling: touch;
+}
+
 #root {
   min-height: 100svh;
 }
