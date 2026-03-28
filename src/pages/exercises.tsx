@@ -1,0 +1,90 @@
+import { useState } from 'react'
+import { useExercises, useUpdateExercise } from '@/hooks/use-exercises'
+import { ExerciseFilters } from '@/components/exercises/exercise-filters'
+import { ExerciseCard } from '@/components/exercises/exercise-card'
+import { ExerciseForm } from '@/components/exercises/exercise-form'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Plus } from 'lucide-react'
+import type { Exercise } from '@/hooks/use-exercises'
+
+export default function ExercisesPage() {
+  const [filters, setFilters] = useState({
+    search: '',
+    muscle: '',
+    equipment: '',
+    favorites: false,
+  })
+  const [editingExercise, setEditingExercise] = useState<Exercise | null>(null)
+  const [creating, setCreating] = useState(false)
+
+  const { data: exercises, isLoading } = useExercises({
+    search: filters.search || undefined,
+    muscle: filters.muscle || undefined,
+    equipment: filters.equipment || undefined,
+    favorites: filters.favorites || undefined,
+  })
+
+  const updateExercise = useUpdateExercise()
+
+  const handleToggleFavorite = (exercise: Exercise) => {
+    updateExercise.mutate({ id: exercise.id, isFavorite: !exercise.isFavorite })
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Exercise Library</h1>
+          <p className="text-muted-foreground">
+            {exercises?.length ?? 0} exercises
+          </p>
+        </div>
+        <Button onClick={() => setCreating(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add Exercise
+        </Button>
+      </div>
+
+      <ExerciseFilters filters={filters} onChange={setFilters} />
+
+      {isLoading ? (
+        <div className="py-12 text-center text-muted-foreground">Loading exercises...</div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {exercises?.map((exercise) => (
+            <ExerciseCard
+              key={exercise.id}
+              exercise={exercise}
+              onEdit={() => setEditingExercise(exercise)}
+              onToggleFavorite={() => handleToggleFavorite(exercise)}
+            />
+          ))}
+        </div>
+      )}
+
+      <Dialog open={!!editingExercise} onOpenChange={() => setEditingExercise(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit Exercise</DialogTitle>
+          </DialogHeader>
+          {editingExercise && (
+            <ExerciseForm
+              exercise={editingExercise}
+              onClose={() => setEditingExercise(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={creating} onOpenChange={setCreating}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>New Exercise</DialogTitle>
+          </DialogHeader>
+          <ExerciseForm onClose={() => setCreating(false)} />
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

@@ -1,0 +1,16 @@
+[
+  { "name": "Chest", "mev": 8, "mav": 14, "mrv": 20, "defaultFrequency": 2, "priorityTier": "Medium" },
+  { "name": "Back", "mev": 8, "mav": 14, "mrv": 22, "defaultFrequency": 2, "priorityTier": "Medium" },
+  { "name": "Front Delts", "mev": 0, "mav": 6, "mrv": 12, "defaultFrequency": 2, "priorityTier": "Low" },
+  { "name": "Side Delts", "mev": 8, "mav": 16, "mrv": 26, "defaultFrequency": 3, "priorityTier": "Medium" },
+  { "name": "Rear Delts", "mev": 0, "mav": 12, "mrv": 20, "defaultFrequency": 2, "priorityTier": "Medium" },
+  { "name": "Biceps", "mev": 4, "mav": 12, "mrv": 20, "defaultFrequency": 3, "priorityTier": "Medium" },
+  { "name": "Triceps", "mev": 4, "mav": 10, "mrv": 18, "defaultFrequency": 2, "priorityTier": "Medium" },
+  { "name": "Forearms", "mev": 2, "mav": 8, "mrv": 14, "defaultFrequency": 2, "priorityTier": "Low" },
+  { "name": "Quads", "mev": 6, "mav": 14, "mrv": 22, "defaultFrequency": 2, "priorityTier": "Medium" },
+  { "name": "Hamstrings", "mev": 4, "mav": 10, "mrv": 18, "defaultFrequency": 2, "priorityTier": "Medium" },
+  { "name": "Glutes", "mev": 0, "mav": 8, "mrv": 16, "defaultFrequency": 2, "priorityTier": "Medium" },
+  { "name": "Calves", "mev": 6, "mav": 12, "mrv": 20, "defaultFrequency": 3, "priorityTier": "Low" },
+  { "name": "Abs", "mev": 0, "mav": 10, "mrv": 20, "defaultFrequency": 3, "priorityTier": "Low" },
+  { "name": "Traps", "mev": 0, "mav": 10, "mrv": 18, "defaultFrequency": 2, "priorityTier": "Low" }
+]

@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model MuscleGroup {
+  id               Int      @id @default(autoincrement())
+  name             String   @unique
+  mev              Int      @default(0)
+  mav              Int      @default(10)
+  mrv              Int      @default(20)
+  defaultFrequency Int      @default(2)
+  priorityTier     String   @default("Medium") // High, Medium, Low
+  injured          Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  volumeAdjustments VolumeAdjustment[]
+}
+
+model Exercise {
+  id              Int      @id @default(autoincrement())
+  name            String   @unique
+  primaryMuscles  String   @default("[]") // JSON array
+  secondaryMuscles String  @default("[]") // JSON array
+  equipment       String   @default("Barbell")
+  movementPattern String   @default("Push")
+  jointStress     String   @default("{}") // JSON object
+  defaultRepRange String   @default("8-12")
+  sfrRating       Float    @default(3.0)
+  notes           String?
+  isFavorite      Boolean  @default(false)
+  isExcluded      Boolean  @default(false)
+  substitutions   String   @default("[]") // JSON array
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  plannedExercises PlannedExercise[]
+  loggedSets       LoggedSet[]
+}
+
+model Mesocycle {
+  id           Int       @id @default(autoincrement())
+  name         String
+  startDate    DateTime?
+  endDate      DateTime?
+  status       String    @default("planning") // planning, active, completed, archived
+  weeks        Int       @default(4)
+  trainingDays String    @default("[]") // JSON array of day numbers (0=Sun, 1=Mon, etc.)
+  goal         String    @default("Pure Hypertrophy")
+  focusMuscles String    @default("[]") // JSON array of muscle group names
+  progression  String    @default("Standard") // Conservative, Standard, Aggressive
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  mesocycleWeeks    MesocycleWeek[]
+  volumeAdjustments VolumeAdjustment[]
+}
+
+model MesocycleWeek {
+  id          Int      @id @default(autoincrement())
+  mesocycleId Int
+  weekNumber  Int
+  isDeload    Boolean  @default(false)
+  volumePlan  String   @default("{}") // JSON: { muscleGroupName: setCount }
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  mesocycle    Mesocycle     @relation(fields: [mesocycleId], references: [id], onDelete: Cascade)
+  workoutPlans WorkoutPlan[]
+
+  @@unique([mesocycleId, weekNumber])
+}
+
+model WorkoutPlan {
+  id              Int      @id @default(autoincrement())
+  mesocycleWeekId Int
+  dayOfWeek       Int      // 0=Sun, 1=Mon, ..., 6=Sat
+  muscleGroups    String   @default("[]") // JSON array
+  label           String?  // e.g., "Push", "Upper A"
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  mesocycleWeek    MesocycleWeek    @relation(fields: [mesocycleWeekId], references: [id], onDelete: Cascade)
+  plannedExercises PlannedExercise[]
+  sessions         Session[]
+}
+
+model PlannedExercise {
+  id            Int      @id @default(autoincrement())
+  workoutPlanId Int
+  exerciseId    Int
+  plannedSets   Int      @default(3)
+  repRange      String   @default("8-12")
+  targetRir     Int      @default(3)
+  suggestedLoad Float?
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  workoutPlan WorkoutPlan @relation(fields: [workoutPlanId], references: [id], onDelete: Cascade)
+  exercise    Exercise    @relation(fields: [exerciseId], references: [id])
+}
+
+model Session {
+  id              Int       @id @default(autoincrement())
+  date            DateTime  @default(now())
+  workoutPlanId   Int?
+  durationMinutes Int?
+  fatigueScore    Int?      // 1-5
+  notes           String?
+  completed       Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workoutPlan WorkoutPlan? @relation(fields: [workoutPlanId], references: [id])
+  loggedSets  LoggedSet[]
+}
+
+model LoggedSet {
+  id          Int      @id @default(autoincrement())
+  sessionId   Int
+  exerciseId  Int
+  setNumber   Int
+  weight      Float
+  reps        Int
+  rirAchieved Int?
+  tempo       String?
+  isWarmup    Boolean  @default(false)
+  notes       String?
+  createdAt   DateTime @default(now())
+
+  session  Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  exercise Exercise @relation(fields: [exerciseId], references: [id])
+}
+
+model BodyMetric {
+  id           Int      @id @default(autoincrement())
+  date         DateTime @default(now())
+  bodyweight   Float?
+  measurements String   @default("{}") // JSON: { chest, waist, hips, arms, thighs }
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+model VolumeAdjustment {
+  id             Int      @id @default(autoincrement())
+  mesocycleId    Int
+  weekNumber     Int
+  muscleGroupId  Int
+  adjustmentType String   // increase, decrease, maintain
+  reason         String?
+  appliedAt      DateTime @default(now())
+
+  mesocycle   Mesocycle   @relation(fields: [mesocycleId], references: [id], onDelete: Cascade)
+  muscleGroup MuscleGroup @relation(fields: [muscleGroupId], references: [id])
+}
+
+model Setting {
+  id    Int    @id @default(autoincrement())
+  key   String @unique
+  value String
+}
