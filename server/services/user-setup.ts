@@ -1,9 +1,5 @@
 import { prisma } from '../db.js'
-import { readFileSync } from 'fs'
-import { resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
-
-const __dirname = dirname(fileURLToPath(import.meta.url))
+import muscleGroupsSeed from '../seed-data/muscle-groups.json' with { type: 'json' }
 
 interface MuscleGroupSeed {
   name: string
@@ -33,11 +29,7 @@ export async function ensureUserSetup(userId: string) {
   const existing = await prisma.muscleGroup.count({ where: { userId } })
   if (existing > 0) return // Already set up
 
-  const muscleGroupsRaw = readFileSync(
-    resolve(__dirname, '../../server/seed-data/muscle-groups.json'),
-    'utf-8'
-  )
-  const muscleGroups: MuscleGroupSeed[] = JSON.parse(muscleGroupsRaw)
+  const muscleGroups: MuscleGroupSeed[] = muscleGroupsSeed as MuscleGroupSeed[]
 
   // Seed muscle groups for this user
   for (const mg of muscleGroups) {

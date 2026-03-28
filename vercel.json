@@ -1,6 +1,11 @@
 {
   "buildCommand": "npx prisma generate && npm run build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/index.ts": {
+      "includeFiles": "server/seed-data/**"
+    }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/((?!assets/).*)", "destination": "/index.html" }

@@ -25,7 +25,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
   ;(req as AuthRequest).userId = user.id
 
   // Provision default data for new users (no-op if already set up)
-  await ensureUserSetup(user.id)
+  try {
+    await ensureUserSetup(user.id)
+  } catch (err) {
+    console.error('ensureUserSetup failed:', err)
+    res.status(500).json({ error: 'User setup failed' })
+    return
+  }
 
   next()
 }
