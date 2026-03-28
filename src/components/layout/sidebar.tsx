@@ -86,15 +86,15 @@ export function Sidebar() {
 
 export function MobileTabBar() {
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border/60 bg-[#111113]/95 backdrop-blur-lg">
-      <div className="flex items-center justify-around px-2 pt-1 pb-[max(8px,env(safe-area-inset-bottom))]">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border/60 bg-[#111113]/95 backdrop-blur-lg" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <div className="flex items-center justify-around px-1">
         {mobileTabItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             className={({ isActive }) =>
               cn(
-                'flex flex-col items-center gap-0.5 py-2 px-3 text-[10px] transition-colors min-w-[64px]',
+                'flex flex-col items-center gap-0.5 py-2 px-3 text-[10px] transition-colors min-w-[56px]',
                 isActive
                   ? 'text-foreground'
                   : 'text-muted-foreground'

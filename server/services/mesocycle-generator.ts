@@ -101,6 +101,13 @@ export async function generateMesocycle(options: GenerateOptions) {
   // Delete existing weeks for this mesocycle (regenerate)
   await prisma.mesocycleWeek.deleteMany({ where: { mesocycleId } })
 
+  // Pre-fetch all exercises and user overrides once (not per-muscle inside the loop)
+  const [allExercises, userOverrides] = await Promise.all([
+    prisma.exercise.findMany({ orderBy: [{ sfrRating: 'desc' }] }),
+    prisma.userExerciseOverride.findMany({ where: { userId } }),
+  ])
+  const overrideMap = new Map(userOverrides.map(o => [o.exerciseId, o]))
+
   // Generate each week (working weeks + deload)
   const totalWeeks = weeks + 1 // +1 for deload
   for (let w = 1; w <= totalWeeks; w++) {
@@ -158,20 +165,11 @@ export async function generateMesocycle(options: GenerateOptions) {
         const muscleSessionCount = splitMuscles.filter(sm => sm.includes(muscleName)).length
         const setsThisSession = Math.max(Math.round(weekVolume / Math.max(muscleSessionCount, 1)), 1)
 
-        // Pick exercises for this muscle, factoring in user overrides
-        const [candidateExercises, userOverrides] = await Promise.all([
-          prisma.exercise.findMany({
-            where: {
-              primaryMuscles: { contains: muscleName },
-            },
-            orderBy: [
-              { sfrRating: 'desc' },
-            ],
-          }),
-          prisma.userExerciseOverride.findMany({ where: { userId } }),
-        ])
-
-        const overrideMap = new Map(userOverrides.map(o => [o.exerciseId, o]))
+        // Filter exercises that target this muscle (parse JSON primaryMuscles)
+        const candidateExercises = allExercises.filter(e => {
+          const muscles: string[] = JSON.parse(e.primaryMuscles || '[]')
+          return muscles.includes(muscleName)
+        })
 
         // Filter out excluded exercises and sort favorites first
         const exercises = candidateExercises
