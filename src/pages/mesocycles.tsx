@@ -149,13 +149,13 @@ export default function MesocyclesPage() {
           <div className="space-y-4">
             <div>
               <label className="text-sm font-medium">Name</label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Hypertrophy Block 1" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Hypertrophy Block 1" autoComplete="off" autoCorrect="off" />
             </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium">Working Weeks</label>
-                <Input type="number" min={2} max={8} value={weeks} onChange={(e) => setWeeks(Number(e.target.value))} />
+                <Input type="number" min={2} max={8} value={weeks} onChange={(e) => setWeeks(Number(e.target.value))} inputMode="numeric" autoComplete="off" />
                 <p className="text-[11px] text-muted-foreground mt-1">+ 1 deload week auto-added</p>
               </div>
               <div>
