@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import type { Request, Response, NextFunction } from 'express'
 import { requireAuth } from './middleware/auth.js'
 import exercisesRouter from './routes/exercises.js'
 import muscleGroupsRouter from './routes/muscle-groups.js'
@@ -18,3 +19,9 @@ router.use('/mesocycles', mesocyclesRouter)
 router.use('/sessions', sessionsRouter)
 router.use('/analytics', analyticsRouter)
 router.use('/settings', settingsRouter)
+
+// Catch async errors from route handlers (Express 4 doesn't handle rejected promises)
+router.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  console.error('Route error:', err.message, err.stack)
+  res.status(500).json({ error: err.message || 'Internal server error' })
+})
