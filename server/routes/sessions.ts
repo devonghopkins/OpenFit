@@ -64,7 +64,19 @@ router.get('/', async (req, res) => {
 
 // GET /api/sessions/prescriptions/:workoutPlanId — auto-calculated weight/reps for a workout
 router.get('/prescriptions/:workoutPlanId', async (req, res) => {
-  const prescriptions = await getWorkoutPrescriptions(parseInt(req.params.workoutPlanId))
+  const { userId } = req as unknown as AuthRequest
+  const workoutPlanId = parseInt(req.params.workoutPlanId)
+
+  const workoutPlan = await prisma.workoutPlan.findUnique({
+    where: { id: workoutPlanId },
+    include: { mesocycleWeek: { include: { mesocycle: true } } },
+  })
+  if (!workoutPlan || !workoutPlan.mesocycleWeek || workoutPlan.mesocycleWeek.mesocycle.userId !== userId) {
+    res.status(403).json({ error: 'Forbidden' })
+    return
+  }
+
+  const prescriptions = await getWorkoutPrescriptions(workoutPlanId, userId)
   res.json(prescriptions)
 })
 
@@ -180,8 +192,17 @@ router.post('/', async (req, res) => {
 
 // PUT /api/sessions/:id
 router.put('/:id', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const id = parseInt(req.params.id)
+
+  const existing = await prisma.session.findUnique({ where: { id, userId } })
+  if (!existing) {
+    res.status(404).json({ error: 'Session not found' })
+    return
+  }
+
   const session = await prisma.session.update({
-    where: { id: parseInt(req.params.id) },
+    where: { id },
     data: {
       fatigueScore: req.body.fatigueScore,
       durationMinutes: req.body.durationMinutes,
@@ -194,6 +215,15 @@ router.put('/:id', async (req, res) => {
 
 // POST /api/sessions/:id/sets — log a single set
 router.post('/:id/sets', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const sessionId = parseInt(req.params.id)
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } })
+  if (!session || session.userId !== userId) {
+    res.status(403).json({ error: 'Forbidden' })
+    return
+  }
+
   const parsed = logSetSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues })
@@ -202,7 +232,7 @@ router.post('/:id/sets', async (req, res) => {
 
   const set = await prisma.loggedSet.create({
     data: {
-      sessionId: parseInt(req.params.id),
+      sessionId,
       ...parsed.data,
     },
     include: { exercise: true },
@@ -218,11 +248,34 @@ router.post('/:id/sets', async (req, res) => {
   })
 })
 
+const updateSetSchema = z.object({
+  weight: z.number().min(0).optional(),
+  reps: z.number().int().min(0).optional(),
+  rirAchieved: z.number().int().min(0).max(5).optional(),
+  isWarmup: z.boolean().optional(),
+  notes: z.string().optional(),
+})
+
 // PUT /api/sessions/:sessionId/sets/:setId
 router.put('/:sessionId/sets/:setId', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const sessionId = parseInt(req.params.sessionId)
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } })
+  if (!session || session.userId !== userId) {
+    res.status(403).json({ error: 'Forbidden' })
+    return
+  }
+
+  const parsed = updateSetSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues })
+    return
+  }
+
   const set = await prisma.loggedSet.update({
     where: { id: parseInt(req.params.setId) },
-    data: req.body,
+    data: parsed.data,
     include: { exercise: true },
   })
   res.json({
@@ -237,6 +290,15 @@ router.put('/:sessionId/sets/:setId', async (req, res) => {
 
 // DELETE /api/sessions/:sessionId/sets/:setId
 router.delete('/:sessionId/sets/:setId', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const sessionId = parseInt(req.params.sessionId)
+
+  const session = await prisma.session.findUnique({ where: { id: sessionId } })
+  if (!session || session.userId !== userId) {
+    res.status(403).json({ error: 'Forbidden' })
+    return
+  }
+
   await prisma.loggedSet.delete({
     where: { id: parseInt(req.params.setId) },
   })

@@ -7,23 +7,26 @@ const router = Router()
 
 // GET /api/analytics/volume?from=&to=&muscleGroup=
 router.get('/volume', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
   const from = req.query.from ? new Date(req.query.from as string) : undefined
   const to = req.query.to ? new Date(req.query.to as string) : undefined
   const muscleGroup = req.query.muscleGroup as string | undefined
-  const data = await getWeeklyVolumeAnalytics(from, to, muscleGroup)
+  const data = await getWeeklyVolumeAnalytics(from, to, muscleGroup, userId)
   res.json(data)
 })
 
 // GET /api/analytics/progress/:exerciseId
 router.get('/progress/:exerciseId', async (req, res) => {
-  const data = await getExerciseProgress(parseInt(req.params.exerciseId))
+  const { userId } = req as unknown as AuthRequest
+  const data = await getExerciseProgress(parseInt(req.params.exerciseId), userId)
   res.json(data)
 })
 
 // GET /api/analytics/recommendation/:exerciseId?targetRir=
 router.get('/recommendation/:exerciseId', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
   const targetRir = req.query.targetRir ? parseInt(req.query.targetRir as string) : 3
-  const rec = await getLoadRecommendation(parseInt(req.params.exerciseId), targetRir)
+  const rec = await getLoadRecommendation(parseInt(req.params.exerciseId), targetRir, userId)
   res.json(rec)
 })
 

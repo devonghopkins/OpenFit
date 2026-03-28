@@ -2,6 +2,7 @@ import { prisma } from '../db.js'
 
 interface GenerateOptions {
   mesocycleId: number
+  userId: string
   trainingDays: number[] // day-of-week numbers: 0=Sun..6=Sat
   weeks: number
   progression: 'Conservative' | 'Standard' | 'Aggressive'
@@ -66,10 +67,10 @@ function getRirForWeek(weekNumber: number, totalWeeks: number): number {
 }
 
 export async function generateMesocycle(options: GenerateOptions) {
-  const { mesocycleId, trainingDays, weeks, progression, focusMuscles } = options
+  const { mesocycleId, userId, trainingDays, weeks, progression, focusMuscles } = options
 
-  // Fetch muscle groups with their volume landmarks
-  const muscleGroups = await prisma.muscleGroup.findMany()
+  // Fetch muscle groups with their volume landmarks (scoped to user)
+  const muscleGroups = await prisma.muscleGroup.findMany({ where: { userId } })
   const muscleMap = new Map(muscleGroups.map(mg => [mg.name, mg]))
 
   // Determine split based on number of training days
@@ -157,16 +158,34 @@ export async function generateMesocycle(options: GenerateOptions) {
         const muscleSessionCount = splitMuscles.filter(sm => sm.includes(muscleName)).length
         const setsThisSession = Math.max(Math.round(weekVolume / Math.max(muscleSessionCount, 1)), 1)
 
-        // Pick exercises for this muscle
-        const exercises = await prisma.exercise.findMany({
-          where: {
-            primaryMuscles: { contains: muscleName },
-          },
-          orderBy: [
-            { sfrRating: 'desc' },
-          ],
-          take: 3,
-        })
+        // Pick exercises for this muscle, factoring in user overrides
+        const [candidateExercises, userOverrides] = await Promise.all([
+          prisma.exercise.findMany({
+            where: {
+              primaryMuscles: { contains: muscleName },
+            },
+            orderBy: [
+              { sfrRating: 'desc' },
+            ],
+          }),
+          prisma.userExerciseOverride.findMany({ where: { userId } }),
+        ])
+
+        const overrideMap = new Map(userOverrides.map(o => [o.exerciseId, o]))
+
+        // Filter out excluded exercises and sort favorites first
+        const exercises = candidateExercises
+          .filter(e => {
+            const override = overrideMap.get(e.id)
+            return !override?.isExcluded
+          })
+          .sort((a, b) => {
+            const aFav = overrideMap.get(a.id)?.isFavorite ? 1 : 0
+            const bFav = overrideMap.get(b.id)?.isFavorite ? 1 : 0
+            if (bFav !== aFav) return bFav - aFav
+            return (b.sfrRating ?? 0) - (a.sfrRating ?? 0)
+          })
+          .slice(0, 3)
 
         if (exercises.length === 0) continue
 

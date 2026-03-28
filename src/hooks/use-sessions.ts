@@ -52,7 +52,7 @@ export interface Session {
 
 export function useSessions(limit = 50) {
   return useQuery({
-    queryKey: ['sessions', limit],
+    queryKey: ['sessions-list', limit],
     queryFn: () => api<Session[]>(`/sessions?limit=${limit}`),
   })
 }

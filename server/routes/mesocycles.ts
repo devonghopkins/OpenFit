@@ -146,6 +146,7 @@ router.post('/:id/generate', async (req, res) => {
 
   const result = await generateMesocycle({
     mesocycleId: mesocycle.id,
+    userId,
     trainingDays,
     weeks: mesocycle.weeks,
     progression: mesocycle.progression as 'Conservative' | 'Standard' | 'Aggressive',
@@ -186,14 +187,22 @@ router.post('/:id/activate', async (req, res) => {
 
 // PUT /api/mesocycles/planned-exercise/:id/swap — swap exercise in a planned exercise
 router.put('/planned-exercise/:id/swap', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
   const { exerciseId } = req.body as { exerciseId: number }
   if (!exerciseId) {
     res.status(400).json({ error: 'exerciseId is required' })
     return
   }
 
-  const pe = await prisma.plannedExercise.findUnique({ where: { id: parseInt(req.params.id) } })
-  if (!pe) {
+  const pe = await prisma.plannedExercise.findUnique({
+    where: { id: parseInt(req.params.id) },
+    include: {
+      workoutPlan: {
+        include: { mesocycleWeek: { include: { mesocycle: true } } },
+      },
+    },
+  })
+  if (!pe || pe.workoutPlan.mesocycleWeek?.mesocycle.userId !== userId) {
     res.status(404).json({ error: 'Planned exercise not found' })
     return
   }
@@ -216,6 +225,7 @@ router.put('/planned-exercise/:id/swap', async (req, res) => {
 
 // PUT /api/mesocycles/planned-exercise/:id/swap-remaining — swap exercise for remaining weeks
 router.put('/planned-exercise/:id/swap-remaining', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
   const { exerciseId } = req.body as { exerciseId: number }
   if (!exerciseId) {
     res.status(400).json({ error: 'exerciseId is required' })
@@ -226,12 +236,12 @@ router.put('/planned-exercise/:id/swap-remaining', async (req, res) => {
     where: { id: parseInt(req.params.id) },
     include: {
       workoutPlan: {
-        include: { mesocycleWeek: true },
+        include: { mesocycleWeek: { include: { mesocycle: true } } },
       },
     },
   })
 
-  if (!pe || !pe.workoutPlan.mesocycleWeek) {
+  if (!pe || !pe.workoutPlan.mesocycleWeek || pe.workoutPlan.mesocycleWeek.mesocycle.userId !== userId) {
     res.status(404).json({ error: 'Planned exercise not found or not part of a mesocycle' })
     return
   }
@@ -271,9 +281,20 @@ router.put('/planned-exercise/:id/swap-remaining', async (req, res) => {
 
 // PUT /api/mesocycles/workout-plan/:planId/reorder — reorder exercises in a workout plan
 router.put('/workout-plan/:planId/reorder', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
   const { exerciseOrder } = req.body as { exerciseOrder: number[] }
   if (!exerciseOrder || !Array.isArray(exerciseOrder)) {
     res.status(400).json({ error: 'exerciseOrder array is required' })
+    return
+  }
+
+  // Verify the workout plan belongs to a mesocycle owned by the user
+  const workoutPlan = await prisma.workoutPlan.findUnique({
+    where: { id: parseInt(req.params.planId) },
+    include: { mesocycleWeek: { include: { mesocycle: true } } },
+  })
+  if (!workoutPlan || workoutPlan.mesocycleWeek?.mesocycle.userId !== userId) {
+    res.status(404).json({ error: 'Workout plan not found' })
     return
   }
 

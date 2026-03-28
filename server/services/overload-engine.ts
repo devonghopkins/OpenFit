@@ -65,10 +65,11 @@ export async function getExercisePrescription(
   targetRir: number,
   repRange: string = '8-12',
   incrementOverrides?: Record<string, number>,
+  userId?: string,
 ): Promise<SetPrescription | null> {
   // Get recent working sets for this exercise
   const recentSets = await prisma.loggedSet.findMany({
-    where: { exerciseId, isWarmup: false },
+    where: { exerciseId, isWarmup: false, ...(userId && { session: { userId } }) },
     orderBy: { createdAt: 'desc' },
     take: 20,
     include: { session: true },
@@ -164,6 +165,7 @@ export async function getExercisePrescription(
  */
 export async function getWorkoutPrescriptions(
   workoutPlanId: number,
+  userId?: string,
 ): Promise<ExercisePrescription[]> {
   const plan = await prisma.workoutPlan.findUnique({
     where: { id: workoutPlanId },
@@ -179,7 +181,7 @@ export async function getWorkoutPrescriptions(
 
   // Load increment settings
   const settings = await prisma.setting.findMany({
-    where: { key: { in: ['incrementBarbell', 'incrementDumbbell', 'incrementCable'] } },
+    where: { ...(userId && { userId }), key: { in: ['incrementBarbell', 'incrementDumbbell', 'incrementCable'] } },
   })
   const incrementOverrides: Record<string, number> = {}
   for (const s of settings) {
@@ -196,6 +198,7 @@ export async function getWorkoutPrescriptions(
       pe.targetRir,
       pe.repRange,
       incrementOverrides,
+      userId,
     )
     prescriptions.push({
       exerciseId: pe.exerciseId,
@@ -213,8 +216,9 @@ export async function getWorkoutPrescriptions(
 export async function getLoadRecommendation(
   exerciseId: number,
   targetRir: number = 3,
+  userId?: string,
 ) {
-  const rx = await getExercisePrescription(exerciseId, targetRir)
+  const rx = await getExercisePrescription(exerciseId, targetRir, '8-12', undefined, userId)
   if (!rx) return null
   return {
     suggestedWeight: rx.suggestedWeight,
@@ -228,16 +232,20 @@ export async function getLoadRecommendation(
 export async function getWeeklyVolumeAnalytics(
   fromDate?: Date,
   toDate?: Date,
-  muscleGroup?: string
+  muscleGroup?: string,
+  userId?: string,
 ) {
-  const where: Record<string, unknown> = { isWarmup: false }
+  const sessionFilter: Record<string, unknown> = {}
+  if (userId) sessionFilter.userId = userId
   if (fromDate || toDate) {
-    where.session = {
-      date: {
-        ...(fromDate && { gte: fromDate }),
-        ...(toDate && { lte: toDate }),
-      },
+    sessionFilter.date = {
+      ...(fromDate && { gte: fromDate }),
+      ...(toDate && { lte: toDate }),
     }
+  }
+  const where: Record<string, unknown> = { isWarmup: false }
+  if (Object.keys(sessionFilter).length > 0) {
+    where.session = sessionFilter
   }
 
   const sets = await prisma.loggedSet.findMany({
@@ -262,9 +270,9 @@ export async function getWeeklyVolumeAnalytics(
   return weeklyVolume
 }
 
-export async function getExerciseProgress(exerciseId: number) {
+export async function getExerciseProgress(exerciseId: number, userId?: string) {
   const sets = await prisma.loggedSet.findMany({
-    where: { exerciseId, isWarmup: false },
+    where: { exerciseId, isWarmup: false, ...(userId && { session: { userId } }) },
     include: { session: true },
     orderBy: { session: { date: 'asc' } },
   })

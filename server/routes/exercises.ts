@@ -120,7 +120,7 @@ router.post('/', async (req, res) => {
     return
   }
   const exercise = await prisma.exercise.create({
-    data: serializeExercise(parsed.data),
+    data: { ...serializeExercise(parsed.data), isSeeded: false },
   })
   res.status(201).json(deserializeExercise(exercise as unknown as Record<string, unknown>))
 })
@@ -155,8 +155,26 @@ router.put('/:id', async (req, res) => {
     return
   }
 
+  const existing = await prisma.exercise.findUnique({ where: { id: parseInt(req.params.id) } })
+  if (!existing) {
+    res.status(404).json({ error: 'Exercise not found' })
+    return
+  }
+
   // isFavorite/isExcluded are per-user and live in UserExerciseOverride — strip them here
   const { isFavorite: _fav, isExcluded: _excl, ...exerciseFields } = parsed.data
+
+  // Seeded exercises can only have notes updated
+  if (existing.isSeeded) {
+    const data: Record<string, unknown> = {}
+    if (exerciseFields.notes !== undefined) data.notes = exerciseFields.notes
+    const exercise = await prisma.exercise.update({
+      where: { id: existing.id },
+      data: data as never,
+    })
+    res.json(deserializeExercise(exercise as unknown as Record<string, unknown>))
+    return
+  }
 
   const data: Record<string, unknown> = { ...exerciseFields }
   if (exerciseFields.primaryMuscles) data.primaryMuscles = JSON.stringify(exerciseFields.primaryMuscles)
@@ -165,16 +183,25 @@ router.put('/:id', async (req, res) => {
   if (exerciseFields.substitutions) data.substitutions = JSON.stringify(exerciseFields.substitutions)
 
   const exercise = await prisma.exercise.update({
-    where: { id: parseInt(req.params.id) },
+    where: { id: existing.id },
     data: data as never,
   })
   res.json(deserializeExercise(exercise as unknown as Record<string, unknown>))
 })
 
-// DELETE /api/exercises/:id
+// DELETE /api/exercises/:id — only allow deletion of non-seeded exercises
 router.delete('/:id', async (req, res) => {
+  const existing = await prisma.exercise.findUnique({ where: { id: parseInt(req.params.id) } })
+  if (!existing) {
+    res.status(404).json({ error: 'Exercise not found' })
+    return
+  }
+  if (existing.isSeeded) {
+    res.status(403).json({ error: 'Cannot delete a seeded exercise' })
+    return
+  }
   await prisma.exercise.delete({
-    where: { id: parseInt(req.params.id) },
+    where: { id: existing.id },
   })
   res.status(204).send()
 })
