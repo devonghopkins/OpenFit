@@ -22,5 +22,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["vite.config.ts", "server/**/*.ts", "prisma/**/*.ts"]
+  "include": ["vite.config.ts", "server/**/*.ts", "api/**/*.ts", "prisma/**/*.ts"]
 }

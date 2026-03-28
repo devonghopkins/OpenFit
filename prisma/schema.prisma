@@ -3,62 +3,88 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
-model MuscleGroup {
+// ─── Shared / Seeded Data (global, no userId) ─────────────────────────────────
+
+model Exercise {
   id               Int      @id @default(autoincrement())
   name             String   @unique
-  mev              Int      @default(0)
-  mav              Int      @default(10)
-  mrv              Int      @default(20)
-  defaultFrequency Int      @default(2)
-  priorityTier     String   @default("Medium") // High, Medium, Low
-  injured          Boolean  @default(false)
+  primaryMuscles   String   @default("[]")   // JSON array
+  secondaryMuscles String   @default("[]")   // JSON array
+  equipment        String   @default("Barbell")
+  movementPattern  String   @default("Push")
+  jointStress      String   @default("{}")   // JSON object
+  defaultRepRange  String   @default("8-12")
+  sfrRating        Float    @default(3.0)
+  notes            String?
+  substitutions    String   @default("[]")   // JSON array
+  isSeeded         Boolean  @default(true)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  volumeAdjustments VolumeAdjustment[]
-}
-
-model Exercise {
-  id              Int      @id @default(autoincrement())
-  name            String   @unique
-  primaryMuscles  String   @default("[]") // JSON array
-  secondaryMuscles String  @default("[]") // JSON array
-  equipment       String   @default("Barbell")
-  movementPattern String   @default("Push")
-  jointStress     String   @default("{}") // JSON object
-  defaultRepRange String   @default("8-12")
-  sfrRating       Float    @default(3.0)
-  notes           String?
-  isFavorite      Boolean  @default(false)
-  isExcluded      Boolean  @default(false)
-  substitutions   String   @default("[]") // JSON array
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
+  userOverrides    UserExerciseOverride[]
   plannedExercises PlannedExercise[]
   loggedSets       LoggedSet[]
 }
 
+// ─── Per-user exercise preferences (favorites, excluded) ─────────────────────
+
+model UserExerciseOverride {
+  id         Int      @id @default(autoincrement())
+  userId     String
+  exerciseId Int
+  isFavorite Boolean  @default(false)
+  isExcluded Boolean  @default(false)
+  notes      String?
+  createdAt  DateTime @default(now())
+
+  exercise   Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, exerciseId])
+  @@index([userId])
+}
+
+// ─── User-scoped models ───────────────────────────────────────────────────────
+
+model MuscleGroup {
+  id               Int      @id @default(autoincrement())
+  userId           String
+  name             String
+  mev              Int      @default(8)
+  mav              Int      @default(14)
+  mrv              Int      @default(20)
+  defaultFrequency Int      @default(2)
+  priorityTier     String   @default("Medium")
+  injured          Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
 model Mesocycle {
   id           Int       @id @default(autoincrement())
+  userId       String
   name         String
   startDate    DateTime?
   endDate      DateTime?
-  status       String    @default("planning") // planning, active, completed, archived
+  status       String    @default("planning")
   weeks        Int       @default(4)
-  trainingDays String    @default("[]") // JSON array of day numbers (0=Sun, 1=Mon, etc.)
+  trainingDays String    @default("[]")   // JSON array
   goal         String    @default("Pure Hypertrophy")
-  focusMuscles String    @default("[]") // JSON array of muscle group names
-  progression  String    @default("Standard") // Conservative, Standard, Aggressive
+  focusMuscles String    @default("[]")   // JSON array
+  progression  String    @default("Standard")
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  mesocycleWeeks    MesocycleWeek[]
-  volumeAdjustments VolumeAdjustment[]
+  mesocycleWeeks MesocycleWeek[]
+
+  @@index([userId])
 }
 
 model MesocycleWeek {
@@ -66,7 +92,7 @@ model MesocycleWeek {
   mesocycleId Int
   weekNumber  Int
   isDeload    Boolean  @default(false)
-  volumePlan  String   @default("{}") // JSON: { muscleGroupName: setCount }
+  volumePlan  String   @default("{}")   // JSON: { muscle: setCount }
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -74,20 +100,23 @@ model MesocycleWeek {
   workoutPlans WorkoutPlan[]
 
   @@unique([mesocycleId, weekNumber])
+  @@index([mesocycleId])
 }
 
 model WorkoutPlan {
   id              Int      @id @default(autoincrement())
   mesocycleWeekId Int
-  dayOfWeek       Int      // 0=Sun, 1=Mon, ..., 6=Sat
-  muscleGroups    String   @default("[]") // JSON array
-  label           String?  // e.g., "Push", "Upper A"
+  dayOfWeek       Int
+  muscleGroups    String   @default("[]")   // JSON array
+  label           String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  mesocycleWeek    MesocycleWeek    @relation(fields: [mesocycleWeekId], references: [id], onDelete: Cascade)
+  mesocycleWeek    MesocycleWeek     @relation(fields: [mesocycleWeekId], references: [id], onDelete: Cascade)
   plannedExercises PlannedExercise[]
   sessions         Session[]
+
+  @@index([mesocycleWeekId])
 }
 
 model PlannedExercise {
@@ -104,14 +133,18 @@ model PlannedExercise {
 
   workoutPlan WorkoutPlan @relation(fields: [workoutPlanId], references: [id], onDelete: Cascade)
   exercise    Exercise    @relation(fields: [exerciseId], references: [id])
+
+  @@index([workoutPlanId])
+  @@index([exerciseId])
 }
 
 model Session {
   id              Int       @id @default(autoincrement())
+  userId          String
   date            DateTime  @default(now())
   workoutPlanId   Int?
   durationMinutes Int?
-  fatigueScore    Int?      // 1-5
+  fatigueScore    Int?
   notes           String?
   completed       Boolean   @default(false)
   createdAt       DateTime  @default(now())
@@ -119,6 +152,9 @@ model Session {
 
   workoutPlan WorkoutPlan? @relation(fields: [workoutPlanId], references: [id])
   loggedSets  LoggedSet[]
+
+  @@index([userId])
+  @@index([workoutPlanId])
 }
 
 model LoggedSet {
@@ -126,8 +162,8 @@ model LoggedSet {
   sessionId   Int
   exerciseId  Int
   setNumber   Int
-  weight      Float
-  reps        Int
+  weight      Float    @default(0)
+  reps        Int      @default(0)
   rirAchieved Int?
   tempo       String?
   isWarmup    Boolean  @default(false)
@@ -136,32 +172,31 @@ model LoggedSet {
 
   session  Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   exercise Exercise @relation(fields: [exerciseId], references: [id])
+
+  @@index([sessionId])
+  @@index([exerciseId])
 }
 
 model BodyMetric {
   id           Int      @id @default(autoincrement())
+  userId       String
   date         DateTime @default(now())
   bodyweight   Float?
-  measurements String   @default("{}") // JSON: { chest, waist, hips, arms, thighs }
+  measurements String   @default("{}")   // JSON
   notes        String?
   createdAt    DateTime @default(now())
-}
 
-model VolumeAdjustment {
-  id             Int      @id @default(autoincrement())
-  mesocycleId    Int
-  weekNumber     Int
-  muscleGroupId  Int
-  adjustmentType String   // increase, decrease, maintain
-  reason         String?
-  appliedAt      DateTime @default(now())
-
-  mesocycle   Mesocycle   @relation(fields: [mesocycleId], references: [id], onDelete: Cascade)
-  muscleGroup MuscleGroup @relation(fields: [muscleGroupId], references: [id])
+  @@index([userId])
 }
 
 model Setting {
-  id    Int    @id @default(autoincrement())
-  key   String @unique
-  value String
+  id        Int      @id @default(autoincrement())
+  userId    String
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, key])
+  @@index([userId])
 }

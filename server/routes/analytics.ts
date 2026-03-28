@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { getWeeklyVolumeAnalytics, getExerciseProgress, getLoadRecommendation } from '../services/overload-engine.js'
 import { prisma } from '../db.js'
+import type { AuthRequest } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -28,8 +29,9 @@ router.get('/recommendation/:exerciseId', async (req, res) => {
 
 // GET /api/analytics/summary — dashboard stats
 router.get('/summary', async (req, res) => {
+  const { userId } = req as AuthRequest
   const activeMeso = await prisma.mesocycle.findFirst({
-    where: { status: 'active' },
+    where: { userId, status: 'active' },
     include: { mesocycleWeeks: true },
   })
 
@@ -40,20 +42,20 @@ router.get('/summary', async (req, res) => {
   weekStart.setHours(0, 0, 0, 0)
 
   const sessionsThisWeek = await prisma.session.count({
-    where: { date: { gte: weekStart }, completed: true },
+    where: { userId, date: { gte: weekStart }, completed: true },
   })
 
   // Total sessions
-  const totalSessions = await prisma.session.count({ where: { completed: true } })
+  const totalSessions = await prisma.session.count({ where: { userId, completed: true } })
 
-  // Total exercises
+  // Total exercises (global — no userId on Exercise)
   const totalExercises = await prisma.exercise.count()
 
   // Weekly volume per muscle (this week's logged sets)
   const thisWeekSets = await prisma.loggedSet.findMany({
     where: {
       isWarmup: false,
-      session: { date: { gte: weekStart } },
+      session: { userId, date: { gte: weekStart } },
     },
     include: { exercise: true },
   })
@@ -100,10 +102,11 @@ router.get('/summary', async (req, res) => {
 
 // GET /api/analytics/mesocycle-summary/:id
 router.get('/mesocycle-summary/:id', async (req, res) => {
+  const { userId } = req as AuthRequest
   const mesoId = parseInt(req.params.id)
 
   const meso = await prisma.mesocycle.findUnique({
-    where: { id: mesoId },
+    where: { id: mesoId, userId },
     include: {
       mesocycleWeeks: {
         include: {

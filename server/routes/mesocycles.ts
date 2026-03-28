@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { prisma } from '../db.js'
 import { z } from 'zod/v4'
 import { generateMesocycle } from '../services/mesocycle-generator.js'
+import type { AuthRequest } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -41,8 +42,10 @@ const createSchema = z.object({
 })
 
 // GET /api/mesocycles
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
+  const { userId } = req as AuthRequest
   const mesocycles = await prisma.mesocycle.findMany({
+    where: { userId },
     orderBy: { createdAt: 'desc' },
   })
   res.json(mesocycles.map(m => deserialize(m as unknown as Record<string, unknown>)))
@@ -50,8 +53,9 @@ router.get('/', async (_req, res) => {
 
 // GET /api/mesocycles/:id
 router.get('/:id', async (req, res) => {
+  const { userId } = req as AuthRequest
   const mesocycle = await prisma.mesocycle.findUnique({
-    where: { id: parseInt(req.params.id) },
+    where: { id: parseInt(req.params.id), userId },
     include: {
       mesocycleWeeks: {
         orderBy: { weekNumber: 'asc' },
@@ -103,6 +107,7 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/mesocycles
 router.post('/', async (req, res) => {
+  const { userId } = req as AuthRequest
   const parsed = createSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues })
@@ -111,6 +116,7 @@ router.post('/', async (req, res) => {
 
   const mesocycle = await prisma.mesocycle.create({
     data: {
+      userId,
       name: parsed.data.name,
       weeks: parsed.data.weeks,
       trainingDays: JSON.stringify(parsed.data.trainingDays),
@@ -125,8 +131,9 @@ router.post('/', async (req, res) => {
 
 // POST /api/mesocycles/:id/generate
 router.post('/:id/generate', async (req, res) => {
+  const { userId } = req as AuthRequest
   const mesocycle = await prisma.mesocycle.findUnique({
-    where: { id: parseInt(req.params.id) },
+    where: { id: parseInt(req.params.id), userId },
   })
 
   if (!mesocycle) {
@@ -150,12 +157,13 @@ router.post('/:id/generate', async (req, res) => {
 
 // PUT /api/mesocycles/:id
 router.put('/:id', async (req, res) => {
+  const { userId } = req as AuthRequest
   const data: Record<string, unknown> = { ...req.body }
   if (data.trainingDays) data.trainingDays = JSON.stringify(data.trainingDays)
   if (data.focusMuscles) data.focusMuscles = JSON.stringify(data.focusMuscles)
 
   const mesocycle = await prisma.mesocycle.update({
-    where: { id: parseInt(req.params.id) },
+    where: { id: parseInt(req.params.id), userId },
     data: data as never,
   })
   res.json(deserialize(mesocycle as unknown as Record<string, unknown>))
@@ -163,13 +171,14 @@ router.put('/:id', async (req, res) => {
 
 // POST /api/mesocycles/:id/activate
 router.post('/:id/activate', async (req, res) => {
-  // Deactivate all others first
+  const { userId } = req as AuthRequest
+  // Deactivate all others for this user first
   await prisma.mesocycle.updateMany({
-    where: { status: 'active' },
+    where: { userId, status: 'active' },
     data: { status: 'planning' },
   })
   const mesocycle = await prisma.mesocycle.update({
-    where: { id: parseInt(req.params.id) },
+    where: { id: parseInt(req.params.id), userId },
     data: { status: 'active' },
   })
   res.json(deserialize(mesocycle as unknown as Record<string, unknown>))
@@ -282,8 +291,9 @@ router.put('/workout-plan/:planId/reorder', async (req, res) => {
 
 // DELETE /api/mesocycles/:id
 router.delete('/:id', async (req, res) => {
+  const { userId } = req as AuthRequest
   await prisma.mesocycle.delete({
-    where: { id: parseInt(req.params.id) },
+    where: { id: parseInt(req.params.id), userId },
   })
   res.status(204).send()
 })

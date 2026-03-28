@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { prisma } from '../db.js'
 import { z } from 'zod/v4'
+import type { AuthRequest } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -41,6 +42,7 @@ function deserializeExercise(row: Record<string, unknown>) {
 
 // GET /api/exercises
 router.get('/', async (req, res) => {
+  const { userId } = req as AuthRequest
   const { search, muscle, equipment, movement, favorites } = req.query
 
   const where: Record<string, unknown> = {}
@@ -54,21 +56,38 @@ router.get('/', async (req, res) => {
   if (movement) {
     where.movementPattern = movement as string
   }
-  if (favorites === 'true') {
-    where.isFavorite = true
-  }
 
-  const exercises = await prisma.exercise.findMany({
-    where: where as never,
-    orderBy: { name: 'asc' },
+  // Fetch exercises and user overrides in parallel
+  const [exercises, overrides] = await Promise.all([
+    prisma.exercise.findMany({
+      where: where as never,
+      orderBy: { name: 'asc' },
+    }),
+    prisma.userExerciseOverride.findMany({
+      where: { userId },
+    }),
+  ])
+
+  const overrideMap = new Map(overrides.map(o => [o.exerciseId, o]))
+
+  let result = exercises.map(e => {
+    const override = overrideMap.get(e.id)
+    return {
+      ...deserializeExercise(e as unknown as Record<string, unknown>),
+      isFavorite: override?.isFavorite ?? false,
+      isExcluded: override?.isExcluded ?? false,
+    }
   })
 
-  const result = exercises.map(deserializeExercise)
+  // Filter favorites via override data
+  if (favorites === 'true') {
+    result = result.filter(e => e.isFavorite)
+  }
 
   // Filter by muscle group in application layer (JSON field)
   if (muscle) {
     const muscleFilter = (muscle as string).toLowerCase()
-    const filtered = result.filter((e: Record<string, unknown>) => {
+    result = result.filter((e: Record<string, unknown>) => {
       const primary = e.primaryMuscles as string[]
       const secondary = e.secondaryMuscles as string[]
       return (
@@ -76,8 +95,6 @@ router.get('/', async (req, res) => {
         secondary.some((m: string) => m.toLowerCase().includes(muscleFilter))
       )
     })
-    res.json(filtered)
-    return
   }
 
   res.json(result)
@@ -108,6 +125,28 @@ router.post('/', async (req, res) => {
   res.status(201).json(deserializeExercise(exercise as unknown as Record<string, unknown>))
 })
 
+// PUT /api/exercises/:id/favorite — upsert isFavorite/isExcluded into UserExerciseOverride
+router.put('/:id/favorite', async (req, res) => {
+  const { userId } = req as AuthRequest
+  const exerciseId = parseInt(req.params.id)
+  const { isFavorite, isExcluded } = req.body as { isFavorite?: boolean; isExcluded?: boolean }
+
+  const override = await prisma.userExerciseOverride.upsert({
+    where: { userId_exerciseId: { userId, exerciseId } },
+    update: {
+      ...(isFavorite !== undefined ? { isFavorite } : {}),
+      ...(isExcluded !== undefined ? { isExcluded } : {}),
+    },
+    create: {
+      userId,
+      exerciseId,
+      isFavorite: isFavorite ?? false,
+      isExcluded: isExcluded ?? false,
+    },
+  })
+  res.json(override)
+})
+
 // PUT /api/exercises/:id
 router.put('/:id', async (req, res) => {
   const parsed = exerciseSchema.partial().safeParse(req.body)
@@ -116,11 +155,14 @@ router.put('/:id', async (req, res) => {
     return
   }
 
-  const data: Record<string, unknown> = { ...parsed.data }
-  if (parsed.data.primaryMuscles) data.primaryMuscles = JSON.stringify(parsed.data.primaryMuscles)
-  if (parsed.data.secondaryMuscles) data.secondaryMuscles = JSON.stringify(parsed.data.secondaryMuscles)
-  if (parsed.data.jointStress) data.jointStress = JSON.stringify(parsed.data.jointStress)
-  if (parsed.data.substitutions) data.substitutions = JSON.stringify(parsed.data.substitutions)
+  // isFavorite/isExcluded are per-user and live in UserExerciseOverride — strip them here
+  const { isFavorite: _fav, isExcluded: _excl, ...exerciseFields } = parsed.data
+
+  const data: Record<string, unknown> = { ...exerciseFields }
+  if (exerciseFields.primaryMuscles) data.primaryMuscles = JSON.stringify(exerciseFields.primaryMuscles)
+  if (exerciseFields.secondaryMuscles) data.secondaryMuscles = JSON.stringify(exerciseFields.secondaryMuscles)
+  if (exerciseFields.jointStress) data.jointStress = JSON.stringify(exerciseFields.jointStress)
+  if (exerciseFields.substitutions) data.substitutions = JSON.stringify(exerciseFields.substitutions)
 
   const exercise = await prisma.exercise.update({
     where: { id: parseInt(req.params.id) },

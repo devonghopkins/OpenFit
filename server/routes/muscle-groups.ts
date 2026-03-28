@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { prisma } from '../db.js'
 import { z } from 'zod/v4'
+import type { AuthRequest } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -14,8 +15,10 @@ const updateSchema = z.object({
 })
 
 // GET /api/muscle-groups
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
+  const { userId } = req as AuthRequest
   const groups = await prisma.muscleGroup.findMany({
+    where: { userId },
     orderBy: { name: 'asc' },
   })
   res.json(groups)
@@ -23,8 +26,9 @@ router.get('/', async (_req, res) => {
 
 // GET /api/muscle-groups/:id
 router.get('/:id', async (req, res) => {
+  const { userId } = req as AuthRequest
   const group = await prisma.muscleGroup.findUnique({
-    where: { id: parseInt(req.params.id) },
+    where: { id: parseInt(req.params.id), userId },
   })
   if (!group) {
     res.status(404).json({ error: 'Muscle group not found' })
@@ -35,13 +39,14 @@ router.get('/:id', async (req, res) => {
 
 // PUT /api/muscle-groups/:id
 router.put('/:id', async (req, res) => {
+  const { userId } = req as AuthRequest
   const parsed = updateSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues })
     return
   }
   const group = await prisma.muscleGroup.update({
-    where: { id: parseInt(req.params.id) },
+    where: { id: parseInt(req.params.id), userId },
     data: parsed.data,
   })
   res.json(group)

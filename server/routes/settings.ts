@@ -1,11 +1,13 @@
 import { Router } from 'express'
 import { prisma } from '../db.js'
+import type { AuthRequest } from '../middleware/auth.js'
 
 const router = Router()
 
 // GET /api/settings
-router.get('/', async (_req, res) => {
-  const settings = await prisma.setting.findMany()
+router.get('/', async (req, res) => {
+  const { userId } = req as AuthRequest
+  const settings = await prisma.setting.findMany({ where: { userId } })
   const map: Record<string, string> = {}
   for (const s of settings) {
     map[s.key] = s.value
@@ -15,15 +17,16 @@ router.get('/', async (_req, res) => {
 
 // PUT /api/settings
 router.put('/', async (req, res) => {
+  const { userId } = req as AuthRequest
   const updates = req.body as Record<string, string>
   for (const [key, value] of Object.entries(updates)) {
     await prisma.setting.upsert({
-      where: { key },
+      where: { userId_key: { userId, key } },
       update: { value: String(value) },
-      create: { key, value: String(value) },
+      create: { userId, key, value: String(value) },
     })
   }
-  const settings = await prisma.setting.findMany()
+  const settings = await prisma.setting.findMany({ where: { userId } })
   const map: Record<string, string> = {}
   for (const s of settings) {
     map[s.key] = s.value
@@ -32,14 +35,15 @@ router.put('/', async (req, res) => {
 })
 
 // GET /api/export — full data export as JSON
-router.get('/export', async (_req, res) => {
+router.get('/export', async (req, res) => {
+  const { userId } = req as AuthRequest
   const [muscleGroups, exercises, mesocycles, sessions, bodyMetrics, settings] = await Promise.all([
-    prisma.muscleGroup.findMany(),
+    prisma.muscleGroup.findMany({ where: { userId } }),
     prisma.exercise.findMany(),
-    prisma.mesocycle.findMany({ include: { mesocycleWeeks: { include: { workoutPlans: { include: { plannedExercises: true } } } } } }),
-    prisma.session.findMany({ include: { loggedSets: true } }),
-    prisma.bodyMetric.findMany(),
-    prisma.setting.findMany(),
+    prisma.mesocycle.findMany({ where: { userId }, include: { mesocycleWeeks: { include: { workoutPlans: { include: { plannedExercises: true } } } } } }),
+    prisma.session.findMany({ where: { userId }, include: { loggedSets: true } }),
+    prisma.bodyMetric.findMany({ where: { userId } }),
+    prisma.setting.findMany({ where: { userId } }),
   ])
 
   res.json({
@@ -55,8 +59,10 @@ router.get('/export', async (_req, res) => {
 
 // POST /api/body-metrics
 router.post('/body-metrics', async (req, res) => {
+  const { userId } = req as AuthRequest
   const metric = await prisma.bodyMetric.create({
     data: {
+      userId,
       bodyweight: req.body.bodyweight || null,
       measurements: JSON.stringify(req.body.measurements || {}),
       notes: req.body.notes || null,
@@ -67,8 +73,10 @@ router.post('/body-metrics', async (req, res) => {
 })
 
 // GET /api/body-metrics
-router.get('/body-metrics', async (_req, res) => {
+router.get('/body-metrics', async (req, res) => {
+  const { userId } = req as AuthRequest
   const metrics = await prisma.bodyMetric.findMany({
+    where: { userId },
     orderBy: { date: 'desc' },
     take: 100,
   })

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { prisma } from '../db.js'
 import { z } from 'zod/v4'
 import { getWorkoutPrescriptions } from '../services/overload-engine.js'
+import type { AuthRequest } from '../middleware/auth.js'
 
 const router = Router()
 
@@ -24,8 +25,10 @@ const logSetSchema = z.object({
 
 // GET /api/sessions
 router.get('/', async (req, res) => {
+  const { userId } = req as AuthRequest
   const { limit, offset } = req.query
   const sessions = await prisma.session.findMany({
+    where: { userId },
     orderBy: { date: 'desc' },
     take: limit ? parseInt(limit as string) : 50,
     skip: offset ? parseInt(offset as string) : 0,
@@ -67,10 +70,12 @@ router.get('/prescriptions/:workoutPlanId', async (req, res) => {
 
 // GET /api/sessions/exercise-history/:exerciseId — last performance for load suggestions
 router.get('/exercise-history/:exerciseId', async (req, res) => {
+  const { userId } = req as AuthRequest
   const sets = await prisma.loggedSet.findMany({
     where: {
       exerciseId: parseInt(req.params.exerciseId),
       isWarmup: false,
+      session: { userId },
     },
     orderBy: { createdAt: 'desc' },
     take: 20,
@@ -81,8 +86,9 @@ router.get('/exercise-history/:exerciseId', async (req, res) => {
 
 // GET /api/sessions/:id
 router.get('/:id', async (req, res) => {
+  const { userId } = req as AuthRequest
   const session = await prisma.session.findUnique({
-    where: { id: parseInt(req.params.id) },
+    where: { id: parseInt(req.params.id), userId },
     include: {
       workoutPlan: {
         include: {
@@ -136,16 +142,18 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/sessions
 router.post('/', async (req, res) => {
+  const { userId } = req as AuthRequest
   const parsed = createSessionSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues })
     return
   }
 
-  // Block if there's already an in-progress session for this workout plan
+  // Block if there's already an in-progress session for this workout plan (scoped to user)
   if (parsed.data.workoutPlanId) {
     const inProgress = await prisma.session.findFirst({
       where: {
+        userId,
         workoutPlanId: parsed.data.workoutPlanId,
         completed: false,
       },
@@ -161,6 +169,7 @@ router.post('/', async (req, res) => {
 
   const session = await prisma.session.create({
     data: {
+      userId,
       workoutPlanId: parsed.data.workoutPlanId || null,
       date: parsed.data.date ? new Date(parsed.data.date) : new Date(),
       notes: parsed.data.notes || null,

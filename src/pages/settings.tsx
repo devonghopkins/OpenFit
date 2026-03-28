@@ -4,9 +4,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { api } from '@/lib/api'
-import { Save, Download, Database, Shield } from 'lucide-react'
+import { useAuth } from '@/lib/auth-context'
+import { Save, Download, Database, Shield, LogOut } from 'lucide-react'
 
 export default function SettingsPage() {
+  const { user, signOut } = useAuth()
   const [settings, setSettings] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [backupMessage, setBackupMessage] = useState('')
@@ -177,6 +179,23 @@ export default function SettingsPage() {
           {backupMessage && (
             <Badge variant="safe" className="text-xs">{backupMessage}</Badge>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Account */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Shield className="h-4 w-4" /> Account
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {user && (
+            <p className="text-xs text-muted-foreground">{user.email}</p>
+          )}
+          <Button variant="outline" className="w-full" onClick={signOut}>
+            <LogOut className="mr-2 h-4 w-4" /> Sign Out
+          </Button>
         </CardContent>
       </Card>
     </div>
