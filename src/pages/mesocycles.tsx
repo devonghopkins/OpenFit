@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Plus, Play, Trash2, Calendar, Zap } from 'lucide-react'
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -146,6 +146,7 @@ export default function MesocyclesPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>New Mesocycle</DialogTitle>
+            <DialogDescription className="sr-only">Configure and generate a new mesocycle training block</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>

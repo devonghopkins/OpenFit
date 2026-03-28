@@ -4,7 +4,7 @@ import { ExerciseFilters } from '@/components/exercises/exercise-filters'
 import { ExerciseCard } from '@/components/exercises/exercise-card'
 import { ExerciseForm } from '@/components/exercises/exercise-form'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { Plus } from 'lucide-react'
 import type { Exercise } from '@/hooks/use-exercises'
 
@@ -67,6 +67,7 @@ export default function ExercisesPage() {
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Exercise</DialogTitle>
+            <DialogDescription className="sr-only">Modify exercise details</DialogDescription>
           </DialogHeader>
           {editingExercise && (
             <ExerciseForm
@@ -81,6 +82,7 @@ export default function ExercisesPage() {
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>New Exercise</DialogTitle>
+            <DialogDescription className="sr-only">Add a new exercise to the library</DialogDescription>
           </DialogHeader>
           <ExerciseForm onClose={() => setCreating(false)} />
         </DialogContent>
