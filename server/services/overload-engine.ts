@@ -27,6 +27,15 @@ function epley1RM(weight: number, reps: number): number {
 }
 
 /**
+ * Calculate E1RM accounting for RIR — estimates reps to failure.
+ * If you did 10 reps at RIR 3, effective reps to failure ≈ 13.
+ */
+function effectiveE1RM(weight: number, reps: number, rir: number | null): number {
+  const repsToFailure = reps + (rir ?? 0)
+  return epley1RM(weight, repsToFailure)
+}
+
+/**
  * Given an E1RM, target RIR, and a weight, calculate how many reps you should get.
  * repsAtFailure = 30 × (E1RM / weight - 1)
  * targetReps = repsAtFailure - targetRIR
@@ -35,17 +44,6 @@ function repsForWeight(e1rm: number, weight: number, targetRir: number): number 
   if (weight <= 0 || e1rm <= 0) return 0
   const repsAtFailure = 30 * (e1rm / weight - 1)
   return Math.max(1, Math.round(repsAtFailure - targetRir))
-}
-
-/**
- * Given an E1RM, target reps, and target RIR, calculate what weight to use.
- * totalReps = targetReps + targetRIR (reps at failure)
- * weight = E1RM / (1 + totalReps/30)
- */
-function weightForReps(e1rm: number, targetReps: number, targetRir: number): number {
-  const repsAtFailure = targetReps + targetRir
-  if (repsAtFailure <= 0) return 0
-  return e1rm / (1 + repsAtFailure / 30)
 }
 
 /**
@@ -91,13 +89,15 @@ export async function getExercisePrescription(
 
   const lastWeight = bestSet.weight
   const lastReps = bestSet.reps
-  const e1rm = epley1RM(lastWeight, lastReps)
 
   // Average RIR from last session (if recorded)
   const rirSets = lastSessionSets.filter(s => s.rirAchieved !== null)
   const lastAvgRir = rirSets.length > 0
     ? rirSets.reduce((sum, s) => sum + (s.rirAchieved || 0), 0) / rirSets.length
     : null
+
+  // Use RIR-adjusted E1RM for accurate strength estimation
+  const e1rm = effectiveE1RM(lastWeight, lastReps, lastAvgRir)
 
   // Get exercise equipment for increment rounding
   const exercise = await prisma.exercise.findUnique({ where: { id: exerciseId } })
@@ -112,46 +112,60 @@ export async function getExercisePrescription(
   // Apply overrides from settings
   const increment = incrementOverrides?.[equipment] ?? defaultIncrements[equipment] ?? 5
 
-  // Parse rep range to get target rep count (midpoint)
+  // Parse rep range
   const [minReps, maxReps] = repRange.split('-').map(Number)
-  const targetReps = Math.round(((minReps || 8) + (maxReps || 12)) / 2)
+  const repFloor = minReps || 8
+  const repCeil = maxReps || 12
 
   let suggestedWeight: number
   let suggestedReps: number
   let reason: string
 
-  if (lastAvgRir === null) {
-    // No RIR data from last session — hold same weight, calculate expected reps as guide
+  // Core progressive overload logic:
+  // 1. Try adding 1 rep at the same weight
+  // 2. If already at top of rep range, bump weight and reset to bottom of range
+  // 3. If a weight bump is a smaller increase than +1 rep, prefer the weight bump
+  // 4. NEVER suggest less than what was done last session
+
+  const repsIfSameWeight = repsForWeight(e1rm, lastWeight, targetRir)
+  const progressReps = Math.max(lastReps + 1, repsIfSameWeight)
+
+  if (progressReps <= repCeil) {
+    // Still room in rep range — add reps at same weight
     suggestedWeight = lastWeight
-    const rawReps = repsForWeight(e1rm, lastWeight, targetRir)
-    suggestedReps = Math.max(minReps || 6, Math.min(maxReps || 15, rawReps))
-    reason = `No RIR data — hold ${lastWeight}, target ${suggestedReps} reps @ RIR ${targetRir}`
-  } else if (lastAvgRir >= targetRir + 1) {
-    // Had more in the tank than target — increase weight
-    const rawWeight = weightForReps(e1rm, targetReps, targetRir)
-    suggestedWeight = roundToIncrement(Math.max(rawWeight, lastWeight + increment), increment)
-    const rawReps = repsForWeight(e1rm, suggestedWeight, targetRir)
-    suggestedReps = Math.max(minReps || 6, Math.min(maxReps || 15, rawReps))
-    reason = `Last RIR ${lastAvgRir.toFixed(1)} (easy) — increase to ${suggestedWeight}`
-  } else if (lastAvgRir <= targetRir - 1) {
-    // Harder than target — hold weight, keep same reps
-    suggestedWeight = lastWeight
-    suggestedReps = Math.max(minReps || 6, Math.min(maxReps || 15, lastReps))
-    reason = `Last RIR ${lastAvgRir.toFixed(1)} (hard) — hold ${lastWeight} for ${suggestedReps} reps`
+    suggestedReps = progressReps
+
+    // Check: would a small weight bump be less total-volume increase than +1 rep?
+    // Volume of +1 rep = lastWeight × 1 = lastWeight
+    // Volume of +weight at same reps = increment × lastReps
+    if (increment > 0 && increment * lastReps < lastWeight) {
+      const bumpedWeight = lastWeight + increment
+      const repsAtBumped = repsForWeight(e1rm, bumpedWeight, targetRir)
+      if (repsAtBumped >= repFloor && repsAtBumped >= lastReps) {
+        suggestedWeight = bumpedWeight
+        suggestedReps = Math.max(lastReps, Math.min(repCeil, repsAtBumped))
+        reason = `+${increment} lb (smaller jump than +1 rep) → ${suggestedWeight} × ${suggestedReps}`
+      } else {
+        reason = `+1 rep → ${suggestedWeight} × ${suggestedReps} @ RIR ${targetRir}`
+      }
+    } else {
+      reason = `+1 rep → ${suggestedWeight} × ${suggestedReps} @ RIR ${targetRir}`
+    }
   } else {
-    // On target — same weight, target same reps at target RIR
-    suggestedWeight = lastWeight
-    const rawReps = repsForWeight(e1rm, lastWeight, targetRir)
-    suggestedReps = Math.max(minReps || 6, Math.min(maxReps || 15, rawReps))
-    reason = `On target — hold ${lastWeight}, aim for ${suggestedReps} reps @ RIR ${targetRir}`
+    // Hit top of rep range — bump weight, reset to bottom of range
+    suggestedWeight = roundToIncrement(lastWeight + increment, increment)
+    const repsAtNewWeight = repsForWeight(e1rm, suggestedWeight, targetRir)
+    suggestedReps = Math.max(repFloor, Math.min(repCeil, repsAtNewWeight))
+    reason = `Top of range — increase to ${suggestedWeight} × ${suggestedReps}`
   }
 
-  // Clamp reps (already clamped above but ensure)
-  const clampedReps = suggestedReps
+  // Safety: NEVER go below last session's performance
+  if (suggestedWeight < lastWeight) suggestedWeight = lastWeight
+  if (suggestedWeight === lastWeight && suggestedReps < lastReps) suggestedReps = lastReps
 
   return {
     suggestedWeight,
-    suggestedReps: clampedReps ?? suggestedReps,
+    suggestedReps,
     lastWeight,
     lastReps,
     lastAvgRir,
