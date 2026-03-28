@@ -42,7 +42,7 @@ function deserializeExercise(row: Record<string, unknown>) {
 
 // GET /api/exercises
 router.get('/', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const { search, muscle, equipment, movement, favorites } = req.query
 
   const where: Record<string, unknown> = {}
@@ -127,7 +127,7 @@ router.post('/', async (req, res) => {
 
 // PUT /api/exercises/:id/favorite — upsert isFavorite/isExcluded into UserExerciseOverride
 router.put('/:id/favorite', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const exerciseId = parseInt(req.params.id)
   const { isFavorite, isExcluded } = req.body as { isFavorite?: boolean; isExcluded?: boolean }
 

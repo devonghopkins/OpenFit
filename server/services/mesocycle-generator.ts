@@ -153,8 +153,6 @@ export async function generateMesocycle(options: GenerateOptions) {
       for (const muscleName of dayMuscles) {
         const weekVolume = volumePlan[muscleName] || 0
         // Divide weekly sets across training frequency for this muscle
-        const mg = muscleMap.get(muscleName)
-        const freq = mg?.defaultFrequency || 2
         // How many sessions does this muscle appear in this split?
         const muscleSessionCount = splitMuscles.filter(sm => sm.includes(muscleName)).length
         const setsThisSession = Math.max(Math.round(weekVolume / Math.max(muscleSessionCount, 1)), 1)
@@ -162,11 +160,9 @@ export async function generateMesocycle(options: GenerateOptions) {
         // Pick exercises for this muscle
         const exercises = await prisma.exercise.findMany({
           where: {
-            isExcluded: false,
             primaryMuscles: { contains: muscleName },
           },
           orderBy: [
-            { isFavorite: 'desc' },
             { sfrRating: 'desc' },
           ],
           take: 3,

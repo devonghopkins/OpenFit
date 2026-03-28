@@ -43,7 +43,7 @@ const createSchema = z.object({
 
 // GET /api/mesocycles
 router.get('/', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const mesocycles = await prisma.mesocycle.findMany({
     where: { userId },
     orderBy: { createdAt: 'desc' },
@@ -53,7 +53,7 @@ router.get('/', async (req, res) => {
 
 // GET /api/mesocycles/:id
 router.get('/:id', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const mesocycle = await prisma.mesocycle.findUnique({
     where: { id: parseInt(req.params.id), userId },
     include: {
@@ -107,7 +107,7 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/mesocycles
 router.post('/', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const parsed = createSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues })
@@ -131,7 +131,7 @@ router.post('/', async (req, res) => {
 
 // POST /api/mesocycles/:id/generate
 router.post('/:id/generate', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const mesocycle = await prisma.mesocycle.findUnique({
     where: { id: parseInt(req.params.id), userId },
   })
@@ -157,7 +157,7 @@ router.post('/:id/generate', async (req, res) => {
 
 // PUT /api/mesocycles/:id
 router.put('/:id', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const data: Record<string, unknown> = { ...req.body }
   if (data.trainingDays) data.trainingDays = JSON.stringify(data.trainingDays)
   if (data.focusMuscles) data.focusMuscles = JSON.stringify(data.focusMuscles)
@@ -171,7 +171,7 @@ router.put('/:id', async (req, res) => {
 
 // POST /api/mesocycles/:id/activate
 router.post('/:id/activate', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   // Deactivate all others for this user first
   await prisma.mesocycle.updateMany({
     where: { userId, status: 'active' },
@@ -291,7 +291,7 @@ router.put('/workout-plan/:planId/reorder', async (req, res) => {
 
 // DELETE /api/mesocycles/:id
 router.delete('/:id', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   await prisma.mesocycle.delete({
     where: { id: parseInt(req.params.id), userId },
   })

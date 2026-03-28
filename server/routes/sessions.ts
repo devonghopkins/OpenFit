@@ -25,7 +25,7 @@ const logSetSchema = z.object({
 
 // GET /api/sessions
 router.get('/', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const { limit, offset } = req.query
   const sessions = await prisma.session.findMany({
     where: { userId },
@@ -70,7 +70,7 @@ router.get('/prescriptions/:workoutPlanId', async (req, res) => {
 
 // GET /api/sessions/exercise-history/:exerciseId — last performance for load suggestions
 router.get('/exercise-history/:exerciseId', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const sets = await prisma.loggedSet.findMany({
     where: {
       exerciseId: parseInt(req.params.exerciseId),
@@ -86,7 +86,7 @@ router.get('/exercise-history/:exerciseId', async (req, res) => {
 
 // GET /api/sessions/:id
 router.get('/:id', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const session = await prisma.session.findUnique({
     where: { id: parseInt(req.params.id), userId },
     include: {
@@ -142,7 +142,7 @@ router.get('/:id', async (req, res) => {
 
 // POST /api/sessions
 router.post('/', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const parsed = createSessionSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues })

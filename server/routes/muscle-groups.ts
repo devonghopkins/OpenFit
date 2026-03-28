@@ -16,7 +16,7 @@ const updateSchema = z.object({
 
 // GET /api/muscle-groups
 router.get('/', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const groups = await prisma.muscleGroup.findMany({
     where: { userId },
     orderBy: { name: 'asc' },
@@ -26,7 +26,7 @@ router.get('/', async (req, res) => {
 
 // GET /api/muscle-groups/:id
 router.get('/:id', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const group = await prisma.muscleGroup.findUnique({
     where: { id: parseInt(req.params.id), userId },
   })
@@ -39,7 +39,7 @@ router.get('/:id', async (req, res) => {
 
 // PUT /api/muscle-groups/:id
 router.put('/:id', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const parsed = updateSchema.safeParse(req.body)
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues })

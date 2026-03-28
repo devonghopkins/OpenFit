@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { useMuscleGroups } from '@/hooks/use-muscle-groups'
 import { api } from '@/lib/api'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts'
+import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent'
 import { Dumbbell, Calendar, BarChart3, Activity } from 'lucide-react'
 
 interface DashboardSummary {
@@ -137,10 +138,11 @@ export default function DashboardPage() {
                 <Tooltip
                   contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: 8, fontSize: 12 }}
                   labelStyle={{ color: '#fafafa' }}
-                  formatter={(value: number, _name: string, props: { payload: { fullName: string; mev: number; mav: number; mrv: number } }) => {
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  formatter={((value: ValueType | undefined, _name: NameType | undefined, props: { payload: { fullName: string; mev: number; mav: number; mrv: number } }) => {
                     const { mev, mav, mrv } = props.payload
-                    return [`${value} sets (MEV: ${mev}, MAV: ${mav}, MRV: ${mrv})`, props.payload.fullName]
-                  }}
+                    return [`${value as number} sets (MEV: ${mev}, MAV: ${mav}, MRV: ${mrv})`, props.payload.fullName]
+                  }) as never}
                 />
                 <Bar dataKey="sets" radius={[4, 4, 0, 0]}>
                   {volumeData.map((entry, index) => (

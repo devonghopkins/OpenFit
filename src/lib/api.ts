@@ -16,9 +16,7 @@ export class ApiError extends Error {
 export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   // Attach Supabase auth token if available
   const { data: { session } } = await supabase.auth.getSession()
-  const authHeader = session?.access_token
-    ? { Authorization: `Bearer ${session.access_token}` }
-    : {}
+  const authHeader = { Authorization: session?.access_token ? `Bearer ${session.access_token}` : '' }
 
   const res = await fetch(`${BASE_URL}${path}`, {
     headers: {

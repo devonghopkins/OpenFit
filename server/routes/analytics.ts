@@ -29,7 +29,7 @@ router.get('/recommendation/:exerciseId', async (req, res) => {
 
 // GET /api/analytics/summary — dashboard stats
 router.get('/summary', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const activeMeso = await prisma.mesocycle.findFirst({
     where: { userId, status: 'active' },
     include: { mesocycleWeeks: true },
@@ -77,7 +77,7 @@ router.get('/summary', async (req, res) => {
   // Active mesocycle info
   let mesoInfo = null
   if (activeMeso) {
-    const completedWeeks = activeMeso.mesocycleWeeks.filter(w => {
+    const completedWeeks = activeMeso.mesocycleWeeks.filter(_w => {
       // A week is "complete" if we're past it chronologically
       return true // simplified — would check dates in production
     }).length
@@ -102,7 +102,7 @@ router.get('/summary', async (req, res) => {
 
 // GET /api/analytics/mesocycle-summary/:id
 router.get('/mesocycle-summary/:id', async (req, res) => {
-  const { userId } = req as AuthRequest
+  const { userId } = req as unknown as AuthRequest
   const mesoId = parseInt(req.params.id)
 
   const meso = await prisma.mesocycle.findUnique({
