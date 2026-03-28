@@ -64,7 +64,7 @@ export default function ExercisesPage() {
       )}
 
       <Dialog open={!!editingExercise} onOpenChange={() => setEditingExercise(null)}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Exercise</DialogTitle>
           </DialogHeader>
@@ -78,7 +78,7 @@ export default function ExercisesPage() {
       </Dialog>
 
       <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>New Exercise</DialogTitle>
           </DialogHeader>

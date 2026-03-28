@@ -142,7 +142,7 @@ export default function MesocyclesPage() {
       )}
 
       <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>New Mesocycle</DialogTitle>
           </DialogHeader>
