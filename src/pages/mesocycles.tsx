@@ -67,14 +67,14 @@ export default function MesocyclesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Programs</h1>
-          <p className="text-muted-foreground">Mesocycle training blocks</p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold tracking-tight">Programs</h1>
+          <p className="text-sm text-muted-foreground">Mesocycle training blocks</p>
         </div>
-        <Button onClick={() => setCreating(true)}>
+        <Button onClick={() => setCreating(true)} className="shrink-0">
           <Plus className="mr-2 h-4 w-4" />
-          New Mesocycle
+          New
         </Button>
       </div>
 
@@ -96,33 +96,34 @@ export default function MesocyclesPage() {
               onClick={() => navigate(`/mesocycles/${meso.id}`)}
             >
               <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <h3 className="font-semibold">{meso.name}</h3>
-                      <Badge variant={statusColors[meso.status] || 'secondary'}>
+                      <h3 className="font-semibold truncate">{meso.name}</h3>
+                      <Badge variant={statusColors[meso.status] || 'secondary'} className="shrink-0">
                         {meso.status}
                       </Badge>
                     </div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      {meso.weeks} weeks &middot; {meso.trainingDays.length} days/week &middot; {meso.progression} progression
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {meso.weeks}wk &middot; {meso.trainingDays.length}d/wk &middot; {meso.progression}
                     </p>
                     {meso.focusMuscles.length > 0 && (
-                      <div className="flex gap-1 mt-2">
+                      <div className="flex flex-wrap gap-1 mt-2">
                         {meso.focusMuscles.map(m => (
                           <Badge key={m} variant="warning" className="text-[10px]">{m}</Badge>
                         ))}
                       </div>
                     )}
                   </div>
-                  <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                     {meso.status !== 'active' && (
                       <Button
                         variant="outline"
-                        size="sm"
+                        size="icon"
+                        className="h-8 w-8"
                         onClick={() => activateMesocycle.mutate(meso.id)}
                       >
-                        <Play className="mr-1 h-3 w-3" /> Activate
+                        <Play className="h-3 w-3" />
                       </Button>
                     )}
                     <Button

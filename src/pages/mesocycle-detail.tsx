@@ -83,12 +83,12 @@ function MesocycleCalendar({ meso, onStartSession }: { meso: Mesocycle; onStartS
   return (
     <div className="space-y-4">
       {/* Legend */}
-      <div className="flex gap-4 text-[10px]">
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]">
         <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-volume-safe" /> Completed
+          <span className="h-2.5 w-2.5 rounded-full bg-volume-safe" /> Done
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-volume-danger" /> In Progress
+          <span className="h-2.5 w-2.5 rounded-full bg-volume-danger" /> Active
         </span>
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/40" /> Upcoming
@@ -318,22 +318,22 @@ export default function MesocycleDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/mesocycles')}>
+      <div className="flex items-start gap-3">
+        <Button variant="ghost" size="icon" className="shrink-0 mt-1" onClick={() => navigate('/mesocycles')}>
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">{meso.name}</h1>
-            <Badge variant={isActive ? 'safe' : 'info'}>{meso.status}</Badge>
+            <h1 className="text-xl font-bold tracking-tight truncate">{meso.name}</h1>
+            <Badge variant={isActive ? 'safe' : 'info'} className="shrink-0">{meso.status}</Badge>
           </div>
-          <p className="text-sm text-muted-foreground">
-            {meso.weeks} working weeks + deload &middot; {meso.progression} progression
+          <p className="text-xs text-muted-foreground">
+            {meso.weeks}wk + deload &middot; {meso.progression}
           </p>
         </div>
         {!isActive && (
-          <Button onClick={() => activateMesocycle.mutate(meso.id)}>
-            <Play className="mr-2 h-4 w-4" /> Activate
+          <Button size="sm" className="shrink-0" onClick={() => activateMesocycle.mutate(meso.id)}>
+            <Play className="mr-1 h-3 w-3" /> Activate
           </Button>
         )}
       </div>

@@ -596,18 +596,20 @@ export default function SessionLogPage() {
               <div className="flex items-center gap-2">
                 <Input
                   type="number"
+                  inputMode="decimal"
                   placeholder="Weight"
                   value={form.weight}
                   onChange={(e) => updateForm(entry.exerciseId, 'weight', e.target.value)}
-                  className="h-10 w-24 text-center text-sm"
+                  className="h-10 flex-1 text-center text-sm"
                 />
-                <span className="text-xs text-muted-foreground">×</span>
+                <span className="text-xs text-muted-foreground shrink-0">×</span>
                 <Input
                   type="number"
+                  inputMode="numeric"
                   placeholder="Reps"
                   value={form.reps}
                   onChange={(e) => updateForm(entry.exerciseId, 'reps', e.target.value)}
-                  className="h-10 w-20 text-center text-sm"
+                  className="h-10 w-20 text-center text-sm shrink-0"
                 />
                 <Button
                   size="icon"

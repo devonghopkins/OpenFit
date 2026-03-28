@@ -64,7 +64,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
 
       {/* Muscle Group Volume Status */}
       <Card>
@@ -74,8 +74,8 @@ export default function AnalyticsPage() {
         <CardContent>
           <div className="space-y-2">
             {volumeOverview.map(mg => (
-              <div key={mg.name} className="flex items-center gap-3">
-                <span className="w-24 text-xs truncate">{mg.name}</span>
+              <div key={mg.name} className="flex items-center gap-2">
+                <span className="w-20 text-xs truncate shrink-0">{mg.name}</span>
                 <div className="flex-1 h-5 bg-muted rounded-full overflow-hidden relative">
                   {/* MEV marker */}
                   <div
@@ -101,18 +101,7 @@ export default function AnalyticsPage() {
                     }}
                   />
                 </div>
-                <span className="w-8 text-xs text-right">{mg.sets}</span>
-                <Badge
-                  variant={
-                    mg.sets === 0 ? 'secondary' :
-                    mg.sets < mg.mev ? 'danger' :
-                    mg.sets <= mg.mav ? 'warning' :
-                    mg.sets <= mg.mrv ? 'safe' : 'danger'
-                  }
-                  className="text-[9px] w-20 justify-center"
-                >
-                  {getZoneLabel(mg.sets, mg.mev, mg.mav, mg.mrv)}
-                </Badge>
+                <span className="w-6 text-xs text-right shrink-0">{mg.sets}</span>
               </div>
             ))}
           </div>

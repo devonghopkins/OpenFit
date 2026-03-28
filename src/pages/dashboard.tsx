@@ -47,7 +47,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
 
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         <Card className="cursor-pointer hover:border-muted-foreground/50" onClick={() => summary?.activeMesocycle && navigate(`/mesocycles/${summary.activeMesocycle.id}`)}>
@@ -114,7 +114,7 @@ export default function DashboardPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">Weekly Volume by Muscle Group</CardTitle>
-          <div className="flex gap-3 text-[10px]">
+          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-volume-danger inline-block" /> Below MEV</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-volume-warning inline-block" /> MEV–MAV</span>
             <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-volume-safe inline-block" /> MAV–MRV</span>

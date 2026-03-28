@@ -18,10 +18,10 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">History</h1>
-        <Button variant="outline" onClick={handleFreeformSession}>
-          <Plus className="mr-2 h-4 w-4" /> Freeform Session
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold tracking-tight">History</h1>
+        <Button variant="outline" onClick={handleFreeformSession} className="shrink-0">
+          <Plus className="mr-2 h-4 w-4" /> Freeform
         </Button>
       </div>
 
@@ -75,7 +75,7 @@ export default function HistoryPage() {
                         {totalVolume > 0 && <> &middot; {Math.round(totalVolume).toLocaleString()} lb</>}
                       </p>
                       {exercises.length > 0 && (
-                        <p className="text-[11px] text-muted-foreground mt-1 truncate max-w-xs">
+                        <p className="text-[11px] text-muted-foreground mt-1 truncate">
                           {exercises.slice(0, 4).join(', ')}{exercises.length > 4 && ` +${exercises.length - 4} more`}
                         </p>
                       )}

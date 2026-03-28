@@ -46,7 +46,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+      <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
 
       {/* Units & Increments */}
       <Card>
@@ -54,7 +54,7 @@ export default function SettingsPage() {
           <CardTitle className="text-sm">Units & Load Increments</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs text-muted-foreground">Weight Unit</label>
               <select
@@ -79,7 +79,7 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="text-xs text-muted-foreground">Barbell Increment</label>
               <Input
@@ -120,7 +120,7 @@ export default function SettingsPage() {
           <CardTitle className="text-sm">Rest Timer Defaults (seconds)</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-xs text-muted-foreground">Compound Exercises</label>
               <Input

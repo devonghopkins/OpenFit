@@ -33,16 +33,16 @@ export default function ExercisesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Exercise Library</h1>
-          <p className="text-muted-foreground">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-bold tracking-tight">Exercises</h1>
+          <p className="text-sm text-muted-foreground">
             {exercises?.length ?? 0} exercises
           </p>
         </div>
-        <Button onClick={() => setCreating(true)}>
+        <Button onClick={() => setCreating(true)} className="shrink-0">
           <Plus className="mr-2 h-4 w-4" />
-          Add Exercise
+          Add
         </Button>
       </div>
 
