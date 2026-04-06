@@ -119,11 +119,11 @@ export function useDeleteSet() {
 }
 
 export interface SetPrescription {
+  setNumber: number
   suggestedWeight: number
   suggestedReps: number
   lastWeight: number
   lastReps: number
-  lastAvgRir: number | null
   e1rm: number
   reason: string
 }
@@ -132,7 +132,8 @@ export interface ExercisePrescription {
   exerciseId: number
   targetRir: number
   plannedSets: number
-  prescription: SetPrescription | null
+  adjustedPlannedSets: number
+  prescriptions: SetPrescription[]
 }
 
 export function useWorkoutPrescriptions(workoutPlanId: number | undefined) {

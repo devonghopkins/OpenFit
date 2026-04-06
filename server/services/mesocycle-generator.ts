@@ -140,6 +140,9 @@ export async function generateMesocycle(options: GenerateOptions) {
       },
     })
 
+    // Track exercises used this week to avoid repeats across days
+    const weekUsedExercises = new Set<number>()
+
     // Create workout plans for each training day
     for (let d = 0; d < trainingDays.length; d++) {
       const dayOfWeek = trainingDays[d]
@@ -171,12 +174,20 @@ export async function generateMesocycle(options: GenerateOptions) {
           return muscles.includes(muscleName)
         })
 
-        // Filter out excluded exercises and sort favorites first
-        const exercises = candidateExercises
-          .filter(e => {
-            const override = overrideMap.get(e.id)
-            return !override?.isExcluded
-          })
+        // Filter out excluded exercises and already-used-this-week, sort favorites first
+        const uniqueCandidates = candidateExercises.filter(e => {
+          const override = overrideMap.get(e.id)
+          if (override?.isExcluded) return false
+          return !weekUsedExercises.has(e.id) // avoid repeats within same week
+        })
+
+        // Fall back to allowing repeats if deduplication leaves nothing
+        const pool = uniqueCandidates.length > 0 ? uniqueCandidates : candidateExercises.filter(e => {
+          const override = overrideMap.get(e.id)
+          return !override?.isExcluded
+        })
+
+        const exercises = pool
           .sort((a, b) => {
             const aFav = overrideMap.get(a.id)?.isFavorite ? 1 : 0
             const bFav = overrideMap.get(b.id)?.isFavorite ? 1 : 0
@@ -194,6 +205,7 @@ export async function generateMesocycle(options: GenerateOptions) {
         const targetRir = getRirForWeek(w, weeks)
 
         for (const ex of exercisesToUse) {
+          weekUsedExercises.add(ex.id)
           await prisma.plannedExercise.create({
             data: {
               workoutPlanId: workoutPlan.id,

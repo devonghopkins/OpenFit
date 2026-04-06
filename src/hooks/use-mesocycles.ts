@@ -9,6 +9,7 @@ export interface PlannedExercise {
   targetRir: number
   suggestedLoad: number | null
   sortOrder: number
+  notes: string | null
   exercise: {
     id: number
     name: string
@@ -140,6 +141,69 @@ export function useReorderExercises() {
       qc.invalidateQueries({ queryKey: ['mesocycles'] })
       qc.invalidateQueries({ queryKey: ['sessions'] })
     },
+  })
+}
+
+export function useAddExerciseToPlan() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workoutPlanId, exerciseId, plannedSets, repRange, targetRir }: {
+      workoutPlanId: number; exerciseId: number; plannedSets?: number; repRange?: string; targetRir?: number
+    }) =>
+      api<PlannedExercise>(`/mesocycles/workout-plan/${workoutPlanId}/exercises`, {
+        method: 'POST',
+        body: JSON.stringify({ exerciseId, plannedSets, repRange, targetRir }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mesocycles'] })
+      qc.invalidateQueries({ queryKey: ['sessions'] })
+    },
+  })
+}
+
+export function useAddExercisePropagated() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workoutPlanId, exerciseId, plannedSets, repRange, targetRir }: {
+      workoutPlanId: number; exerciseId: number; plannedSets?: number; repRange?: string; targetRir?: number
+    }) =>
+      api<{ added: number }>(`/mesocycles/workout-plan/${workoutPlanId}/exercises/propagate`, {
+        method: 'POST',
+        body: JSON.stringify({ exerciseId, plannedSets, repRange, targetRir }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mesocycles'] })
+      qc.invalidateQueries({ queryKey: ['sessions'] })
+    },
+  })
+}
+
+export function useReorderExercisesRemaining() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workoutPlanId, exerciseOrder }: { workoutPlanId: number; exerciseOrder: number[] }) =>
+      api<{ success: boolean }>(`/mesocycles/workout-plan/${workoutPlanId}/reorder-remaining`, {
+        method: 'PUT',
+        body: JSON.stringify({ exerciseOrder }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mesocycles'] })
+      qc.invalidateQueries({ queryKey: ['sessions'] })
+    },
+  })
+}
+
+export function useUpdateExerciseNotes() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ plannedExerciseId, notes, propagate = true }: {
+      plannedExerciseId: number; notes: string; propagate?: boolean
+    }) =>
+      api<{ success: boolean }>(`/mesocycles/planned-exercise/${plannedExerciseId}/notes`, {
+        method: 'PUT',
+        body: JSON.stringify({ notes, propagate }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['mesocycles'] }),
   })
 }
 
