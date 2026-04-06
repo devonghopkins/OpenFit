@@ -75,6 +75,7 @@ interface ExerciseEntry {
   targetRir?: number
   plannedExerciseId?: number
   sortOrder?: number
+  notes?: string
 }
 
 // Exercise history dialog
@@ -350,20 +351,24 @@ export default function SessionLogPage() {
   const getForm = (exerciseId: number): SetFormData => {
     if (setForms[exerciseId]) return setForms[exerciseId]
 
-    // Auto-fill from prescription if available and not yet initialized
+    // Auto-fill from the NEXT set's prescription (based on how many sets already logged)
     if (!initializedExercises.has(exerciseId)) {
       const rx = prescriptionMap.get(exerciseId)
-      if (rx?.prescription) {
-        const form = {
-          weight: String(rx.prescription.suggestedWeight),
-          reps: String(rx.prescription.suggestedReps),
+      if (rx?.prescriptions && rx.prescriptions.length > 0) {
+        const logged = setsByExercise.get(exerciseId) || []
+        const nextSetIndex = logged.filter(s => !s.isWarmup).length
+        const setRx = rx.prescriptions[nextSetIndex] || rx.prescriptions[rx.prescriptions.length - 1]
+        if (setRx) {
+          const form = {
+            weight: String(setRx.suggestedWeight),
+            reps: String(setRx.suggestedReps),
+          }
+          setTimeout(() => {
+            setSetForms(prev => ({ ...prev, [exerciseId]: form }))
+            setInitializedExercises(prev => new Set(prev).add(exerciseId))
+          }, 0)
+          return form
         }
-        // Defer state update
-        setTimeout(() => {
-          setSetForms(prev => ({ ...prev, [exerciseId]: form }))
-          setInitializedExercises(prev => new Set(prev).add(exerciseId))
-        }, 0)
-        return form
       }
     }
 
@@ -413,6 +418,22 @@ export default function SessionLogPage() {
       setNumber,
       weight: parseFloat(form.weight) || 0,
       reps: parseInt(form.reps) || 0,
+    }, {
+      onSuccess: () => {
+        // Advance to next set's prescription
+        const rx = prescriptionMap.get(exerciseId)
+        const nextIndex = setNumber // setNumber was 1-based, so this is the next 0-based index
+        const nextRx = rx?.prescriptions[nextIndex] || rx?.prescriptions[rx.prescriptions.length - 1]
+        if (nextRx) {
+          setSetForms(prev => ({
+            ...prev,
+            [exerciseId]: {
+              weight: String(nextRx.suggestedWeight),
+              reps: String(nextRx.suggestedReps),
+            },
+          }))
+        }
+      },
     })
   }
 
@@ -441,6 +462,7 @@ export default function SessionLogPage() {
       targetRir: pe.targetRir,
       plannedExerciseId: pe.id,
       sortOrder: pe.sortOrder,
+      notes: (pe as { notes?: string }).notes ?? undefined,
     })
     seenIds.add(pe.exercise.id)
   }
@@ -506,9 +528,12 @@ export default function SessionLogPage() {
         const rx = prescriptionMap.get(entry.exerciseId)
         const plannedIdx = entry.plannedExerciseId ? plannedEntries.findIndex(e => e.plannedExerciseId === entry.plannedExerciseId) : -1
 
-        // Set progress: logged / target
-        const targetSets = entry.plannedSets || 0
+        // Set progress: logged / target (use adjusted set count if user did extra)
+        const targetSets = rx?.adjustedPlannedSets || entry.plannedSets || 0
         const loggedCount = logged.filter(s => !s.isWarmup).length
+
+        // Ghost sets: prescriptions not yet logged
+        const ghostSets = rx?.prescriptions.slice(loggedCount) || []
 
         return (
           <Card key={entry.exerciseId}>
@@ -535,14 +560,9 @@ export default function SessionLogPage() {
                       <span className="text-[11px] text-muted-foreground">Target RIR {entry.targetRir}</span>
                     )}
                   </div>
-                  {/* Prescription info */}
-                  {rx?.prescription && (
-                    <p className="text-[10px] text-volume-info mt-0.5">
-                      Suggested: {rx.prescription.suggestedWeight} lb × {rx.prescription.suggestedReps}
-                      <span className="text-muted-foreground ml-1">
-                        (E1RM {rx.prescription.e1rm} · last {rx.prescription.lastWeight}×{rx.prescription.lastReps})
-                      </span>
-                    </p>
+                  {/* Exercise notes */}
+                  {entry.notes && (
+                    <p className="text-[10px] text-volume-warning mt-0.5 italic">{entry.notes}</p>
                   )}
                 </div>
                 <ExerciseActions
@@ -591,6 +611,22 @@ export default function SessionLogPage() {
                   </Button>
                 </div>
               ))}
+
+              {/* Ghost rows: upcoming planned sets */}
+              {ghostSets.length > 0 && (
+                <div className="space-y-0.5">
+                  {ghostSets.map((gs) => (
+                    <div
+                      key={gs.setNumber}
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm bg-muted/30 text-muted-foreground border border-dashed border-muted"
+                    >
+                      <span className="w-6 text-center text-xs">{gs.setNumber}</span>
+                      <span className="flex-1">{gs.suggestedWeight} lb × {gs.suggestedReps}</span>
+                      <span className="text-[10px]">planned</span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* New set input — weight × reps, no manual RIR */}
               <div className="flex items-center gap-2">

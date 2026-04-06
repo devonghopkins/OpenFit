@@ -1,11 +1,11 @@
 import { prisma } from '../db.js'
 
-interface SetPrescription {
+export interface SetPrescription {
+  setNumber: number
   suggestedWeight: number
   suggestedReps: number
   lastWeight: number
   lastReps: number
-  lastAvgRir: number | null
   e1rm: number
   reason: string
 }
@@ -14,169 +14,236 @@ export interface ExercisePrescription {
   exerciseId: number
   targetRir: number
   plannedSets: number
-  prescription: SetPrescription | null
+  adjustedPlannedSets: number // may be higher if user did extra sets last time
+  prescriptions: SetPrescription[]
 }
 
-/**
- * Calculate E1RM using Epley formula: weight × (1 + reps/30)
- */
+// ─── Math utilities ──────────────────────────────────────────────────
+
 function epley1RM(weight: number, reps: number): number {
   if (reps <= 0 || weight <= 0) return 0
   if (reps === 1) return weight
   return weight * (1 + reps / 30)
 }
 
-/**
- * Calculate E1RM accounting for RIR — estimates reps to failure.
- * If you did 10 reps at RIR 3, effective reps to failure ≈ 13.
- */
 function effectiveE1RM(weight: number, reps: number, rir: number | null): number {
   const repsToFailure = reps + (rir ?? 0)
   return epley1RM(weight, repsToFailure)
 }
 
-/**
- * Given an E1RM, target RIR, and a weight, calculate how many reps you should get.
- * repsAtFailure = 30 × (E1RM / weight - 1)
- * targetReps = repsAtFailure - targetRIR
- */
 function repsForWeight(e1rm: number, weight: number, targetRir: number): number {
   if (weight <= 0 || e1rm <= 0) return 0
   const repsAtFailure = 30 * (e1rm / weight - 1)
   return Math.max(1, Math.round(repsAtFailure - targetRir))
 }
 
-/**
- * Round weight to nearest increment for equipment type
- */
 function roundToIncrement(weight: number, increment: number): number {
   if (increment <= 0) return Math.round(weight)
   return Math.round(weight / increment) * increment
 }
 
-/**
- * Get prescription for a single exercise based on history and target RIR.
- * Uses E1RM math to auto-calculate weight and reps.
- */
-export async function getExercisePrescription(
-  exerciseId: number,
-  targetRir: number,
-  repRange: string = '8-12',
-  incrementOverrides?: Record<string, number>,
-  userId?: string,
-): Promise<SetPrescription | null> {
-  // Get recent working sets for this exercise
-  const recentSets = await prisma.loggedSet.findMany({
-    where: { exerciseId, isWarmup: false, ...(userId && { session: { userId } }) },
-    orderBy: { createdAt: 'desc' },
-    take: 20,
-    include: { session: true },
-  })
-
-  if (recentSets.length === 0) return null
-
-  // Get the most recent completed session's sets
-  const completedSets = recentSets.filter(s => s.session.completed)
-  if (completedSets.length === 0) return null
-
-  const lastSessionId = completedSets[0].sessionId
-  const lastSessionSets = completedSets.filter(s => s.sessionId === lastSessionId)
-
-  // Use the best set from last session for E1RM calculation
-  const bestSet = lastSessionSets.reduce((best, s) =>
-    s.weight * s.reps > best.weight * best.reps ? s : best
-  )
-
-  const lastWeight = bestSet.weight
-  const lastReps = bestSet.reps
-
-  // Average RIR from last session (if recorded)
-  const rirSets = lastSessionSets.filter(s => s.rirAchieved !== null)
-  const lastAvgRir = rirSets.length > 0
-    ? rirSets.reduce((sum, s) => sum + (s.rirAchieved || 0), 0) / rirSets.length
-    : null
-
-  // Use RIR-adjusted E1RM for accurate strength estimation
-  const e1rm = effectiveE1RM(lastWeight, lastReps, lastAvgRir)
-
-  // Get exercise equipment for increment rounding
-  const exercise = await prisma.exercise.findUnique({ where: { id: exerciseId } })
-  const equipment = exercise?.equipment || 'Barbell'
-
-  // Default increments
-  const defaultIncrements: Record<string, number> = {
+function getIncrement(equipment: string, overrides?: Record<string, number>): number {
+  const defaults: Record<string, number> = {
     Barbell: 5, 'Smith Machine': 5, Dumbbell: 5,
     Cable: 5, Machine: 5, Bodyweight: 0, Band: 0,
   }
+  return overrides?.[equipment] ?? defaults[equipment] ?? 5
+}
 
-  // Apply overrides from settings
-  const increment = incrementOverrides?.[equipment] ?? defaultIncrements[equipment] ?? 5
+// ─── Core: per-set progressive overload ──────────────────────────────
 
-  // Parse rep range
-  const [minReps, maxReps] = repRange.split('-').map(Number)
-  const repFloor = minReps || 8
-  const repCeil = maxReps || 12
+function progressSet(
+  lastWeight: number,
+  lastReps: number,
+  lastRir: number | null,
+  targetRir: number,
+  repFloor: number,
+  repCeil: number,
+  increment: number,
+): { weight: number; reps: number; reason: string } {
+  const e1rm = effectiveE1RM(lastWeight, lastReps, lastRir)
+
+  const repsIfSameWeight = repsForWeight(e1rm, lastWeight, targetRir)
+  const progressReps = Math.max(lastReps + 1, repsIfSameWeight)
 
   let suggestedWeight: number
   let suggestedReps: number
   let reason: string
 
-  // Core progressive overload logic:
-  // 1. Try adding 1 rep at the same weight
-  // 2. If already at top of rep range, bump weight and reset to bottom of range
-  // 3. If a weight bump is a smaller increase than +1 rep, prefer the weight bump
-  // 4. NEVER suggest less than what was done last session
-
-  const repsIfSameWeight = repsForWeight(e1rm, lastWeight, targetRir)
-  const progressReps = Math.max(lastReps + 1, repsIfSameWeight)
-
   if (progressReps <= repCeil) {
-    // Still room in rep range — add reps at same weight
     suggestedWeight = lastWeight
     suggestedReps = progressReps
 
-    // Check: would a small weight bump be less total-volume increase than +1 rep?
-    // Volume of +1 rep = lastWeight × 1 = lastWeight
-    // Volume of +weight at same reps = increment × lastReps
+    // Prefer weight bump if it's a smaller volume increase than +1 rep
     if (increment > 0 && increment * lastReps < lastWeight) {
       const bumpedWeight = lastWeight + increment
       const repsAtBumped = repsForWeight(e1rm, bumpedWeight, targetRir)
       if (repsAtBumped >= repFloor && repsAtBumped >= lastReps) {
         suggestedWeight = bumpedWeight
         suggestedReps = Math.max(lastReps, Math.min(repCeil, repsAtBumped))
-        reason = `+${increment} lb (smaller jump than +1 rep) → ${suggestedWeight} × ${suggestedReps}`
+        reason = `+${increment} lb → ${suggestedWeight} × ${suggestedReps}`
       } else {
-        reason = `+1 rep → ${suggestedWeight} × ${suggestedReps} @ RIR ${targetRir}`
+        reason = `+1 rep → ${suggestedWeight} × ${suggestedReps}`
       }
     } else {
-      reason = `+1 rep → ${suggestedWeight} × ${suggestedReps} @ RIR ${targetRir}`
+      reason = `+1 rep → ${suggestedWeight} × ${suggestedReps}`
     }
   } else {
-    // Hit top of rep range — bump weight, reset to bottom of range
     suggestedWeight = roundToIncrement(lastWeight + increment, increment)
-    const repsAtNewWeight = repsForWeight(e1rm, suggestedWeight, targetRir)
-    suggestedReps = Math.max(repFloor, Math.min(repCeil, repsAtNewWeight))
-    reason = `Top of range — increase to ${suggestedWeight} × ${suggestedReps}`
+    const repsAtNew = repsForWeight(e1rm, suggestedWeight, targetRir)
+    suggestedReps = Math.max(repFloor, Math.min(repCeil, repsAtNew))
+    reason = `Top of range → ${suggestedWeight} × ${suggestedReps}`
   }
 
-  // Safety: NEVER go below last session's performance
+  // Safety: never regress
   if (suggestedWeight < lastWeight) suggestedWeight = lastWeight
   if (suggestedWeight === lastWeight && suggestedReps < lastReps) suggestedReps = lastReps
 
-  return {
-    suggestedWeight,
-    suggestedReps,
-    lastWeight,
-    lastReps,
-    lastAvgRir,
-    e1rm: Math.round(e1rm * 10) / 10,
-    reason,
-  }
+  return { weight: suggestedWeight, reps: suggestedReps, reason }
 }
 
-/**
- * Get prescriptions for all exercises in a workout plan.
- */
+// ─── Fetch last session's per-set data (matched by day label) ────────
+
+interface LastSetData {
+  setNumber: number
+  weight: number
+  reps: number
+  rirAchieved: number | null
+}
+
+async function getLastSessionSets(
+  exerciseId: number,
+  userId: string | undefined,
+  workoutLabel: string | undefined,
+): Promise<LastSetData[]> {
+  // Try label-matched history first (same day slot from previous week)
+  if (workoutLabel) {
+    const labelSets = await prisma.loggedSet.findMany({
+      where: {
+        exerciseId,
+        isWarmup: false,
+        session: {
+          completed: true,
+          ...(userId && { userId }),
+          workoutPlan: { label: workoutLabel },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+      include: { session: true },
+    })
+
+    if (labelSets.length > 0) {
+      const lastSessionId = labelSets[0].sessionId
+      return labelSets
+        .filter(s => s.sessionId === lastSessionId)
+        .sort((a, b) => a.setNumber - b.setNumber)
+        .map(s => ({
+          setNumber: s.setNumber,
+          weight: s.weight,
+          reps: s.reps,
+          rirAchieved: s.rirAchieved,
+        }))
+    }
+  }
+
+  // Fall back to any completed session with this exercise
+  const allSets = await prisma.loggedSet.findMany({
+    where: {
+      exerciseId,
+      isWarmup: false,
+      session: {
+        completed: true,
+        ...(userId && { userId }),
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+    include: { session: true },
+  })
+
+  if (allSets.length === 0) return []
+
+  const lastSessionId = allSets[0].sessionId
+  return allSets
+    .filter(s => s.sessionId === lastSessionId)
+    .sort((a, b) => a.setNumber - b.setNumber)
+    .map(s => ({
+      setNumber: s.setNumber,
+      weight: s.weight,
+      reps: s.reps,
+      rirAchieved: s.rirAchieved,
+    }))
+}
+
+// ─── Multi-set prescription for one exercise ─────────────────────────
+
+async function getMultiSetPrescription(
+  exerciseId: number,
+  targetRir: number,
+  repRange: string,
+  plannedSets: number,
+  incrementOverrides: Record<string, number> | undefined,
+  userId: string | undefined,
+  workoutLabel: string | undefined,
+): Promise<{ prescriptions: SetPrescription[]; adjustedPlannedSets: number }> {
+  const lastSets = await getLastSessionSets(exerciseId, userId, workoutLabel)
+  if (lastSets.length === 0) return { prescriptions: [], adjustedPlannedSets: plannedSets }
+
+  const exercise = await prisma.exercise.findUnique({ where: { id: exerciseId } })
+  const equipment = exercise?.equipment || 'Barbell'
+  const increment = getIncrement(equipment, incrementOverrides)
+
+  const [minReps, maxReps] = repRange.split('-').map(Number)
+  const repFloor = minReps || 8
+  const repCeil = maxReps || 12
+
+  // If user did more sets than planned, adjust upward
+  const adjustedPlannedSets = Math.max(plannedSets, lastSets.length)
+
+  const prescriptions: SetPrescription[] = []
+
+  for (let i = 0; i < adjustedPlannedSets; i++) {
+    const lastSet = lastSets[i] // may be undefined for sets beyond what was logged
+
+    if (lastSet) {
+      // Progress from last session's actual per-set data
+      const { weight, reps, reason } = progressSet(
+        lastSet.weight, lastSet.reps, lastSet.rirAchieved,
+        targetRir, repFloor, repCeil, increment,
+      )
+
+      const e1rm = effectiveE1RM(lastSet.weight, lastSet.reps, lastSet.rirAchieved)
+
+      prescriptions.push({
+        setNumber: i + 1,
+        suggestedWeight: weight,
+        suggestedReps: reps,
+        lastWeight: lastSet.weight,
+        lastReps: lastSet.reps,
+        e1rm: Math.round(e1rm * 10) / 10,
+        reason,
+      })
+    } else {
+      // Extra set beyond last session — use the last known set's prescription
+      const prev = prescriptions[prescriptions.length - 1]
+      if (prev) {
+        prescriptions.push({
+          ...prev,
+          setNumber: i + 1,
+          lastWeight: 0,
+          lastReps: 0,
+          reason: `New set — match set ${i}`,
+        })
+      }
+    }
+  }
+
+  return { prescriptions, adjustedPlannedSets }
+}
+
+// ─── Workout-level prescriptions ─────────────────────────────────────
+
 export async function getWorkoutPrescriptions(
   workoutPlanId: number,
   userId?: string,
@@ -204,41 +271,60 @@ export async function getWorkoutPrescriptions(
     if (s.key === 'incrementCable') incrementOverrides['Cable'] = parseFloat(s.value)
   }
 
-  const prescriptions: ExercisePrescription[] = []
+  const results: ExercisePrescription[] = []
 
   for (const pe of plan.plannedExercises) {
-    const prescription = await getExercisePrescription(
+    const { prescriptions, adjustedPlannedSets } = await getMultiSetPrescription(
       pe.exerciseId,
       pe.targetRir,
       pe.repRange,
+      pe.plannedSets,
       incrementOverrides,
       userId,
+      plan.label ?? undefined,
     )
-    prescriptions.push({
+
+    results.push({
       exerciseId: pe.exerciseId,
       targetRir: pe.targetRir,
       plannedSets: pe.plannedSets,
-      prescription,
+      adjustedPlannedSets,
+      prescriptions,
     })
   }
 
-  return prescriptions
+  return results
 }
 
-// ─── Legacy exports kept for analytics routes ─────────────────────────
+// ─── Legacy exports for analytics routes ─────────────────────────────
 
 export async function getLoadRecommendation(
   exerciseId: number,
   targetRir: number = 3,
   userId?: string,
 ) {
-  const rx = await getExercisePrescription(exerciseId, targetRir, '8-12', undefined, userId)
-  if (!rx) return null
+  const lastSets = await getLastSessionSets(exerciseId, userId, undefined)
+  if (lastSets.length === 0) return null
+
+  const bestSet = lastSets.reduce((best, s) =>
+    s.weight * s.reps > best.weight * best.reps ? s : best
+  )
+
+  const rirSets = lastSets.filter(s => s.rirAchieved !== null)
+  const lastAvgRir = rirSets.length > 0
+    ? rirSets.reduce((sum, s) => sum + (s.rirAchieved || 0), 0) / rirSets.length
+    : null
+
+  const { weight, reason } = progressSet(
+    bestSet.weight, bestSet.reps, bestSet.rirAchieved,
+    targetRir, 8, 12, 5,
+  )
+
   return {
-    suggestedWeight: rx.suggestedWeight,
-    reason: rx.reason,
-    lastWeight: rx.lastWeight,
-    lastAvgRir: rx.lastAvgRir ?? 0,
+    suggestedWeight: weight,
+    reason,
+    lastWeight: bestSet.weight,
+    lastAvgRir: lastAvgRir ?? 0,
     targetRir,
   }
 }

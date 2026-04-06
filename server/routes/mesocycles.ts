@@ -310,6 +310,189 @@ router.put('/workout-plan/:planId/reorder', async (req, res) => {
   res.json({ success: true })
 })
 
+// ─── Add exercise to a workout plan ──────────────────────────────────
+
+// POST /api/mesocycles/workout-plan/:planId/exercises
+router.post('/workout-plan/:planId/exercises', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const { exerciseId, plannedSets = 3, repRange = '8-12', targetRir = 3 } = req.body as {
+    exerciseId: number; plannedSets?: number; repRange?: string; targetRir?: number
+  }
+
+  const plan = await prisma.workoutPlan.findUnique({
+    where: { id: parseInt(req.params.planId) },
+    include: {
+      mesocycleWeek: { include: { mesocycle: true } },
+      plannedExercises: { orderBy: { sortOrder: 'desc' }, take: 1 },
+    },
+  })
+  if (!plan || plan.mesocycleWeek?.mesocycle.userId !== userId) {
+    res.status(404).json({ error: 'Workout plan not found' })
+    return
+  }
+
+  const maxSort = plan.plannedExercises[0]?.sortOrder ?? -1
+
+  const pe = await prisma.plannedExercise.create({
+    data: { workoutPlanId: plan.id, exerciseId, plannedSets, repRange, targetRir, sortOrder: maxSort + 1 },
+    include: { exercise: true },
+  })
+
+  res.status(201).json(pe)
+})
+
+// POST /api/mesocycles/workout-plan/:planId/exercises/propagate — add to this + future weeks
+router.post('/workout-plan/:planId/exercises/propagate', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const { exerciseId, plannedSets = 3, repRange = '8-12', targetRir = 3 } = req.body as {
+    exerciseId: number; plannedSets?: number; repRange?: string; targetRir?: number
+  }
+
+  const plan = await prisma.workoutPlan.findUnique({
+    where: { id: parseInt(req.params.planId) },
+    include: {
+      mesocycleWeek: { include: { mesocycle: true } },
+      plannedExercises: { orderBy: { sortOrder: 'desc' }, take: 1 },
+    },
+  })
+  if (!plan || !plan.mesocycleWeek || plan.mesocycleWeek.mesocycle.userId !== userId) {
+    res.status(404).json({ error: 'Workout plan not found' })
+    return
+  }
+
+  const { mesocycleId, weekNumber } = plan.mesocycleWeek
+
+  // Find all matching workout plans (same label, current + future weeks)
+  const matchingPlans = await prisma.workoutPlan.findMany({
+    where: {
+      label: plan.label,
+      mesocycleWeek: { mesocycleId, weekNumber: { gte: weekNumber } },
+    },
+    include: { plannedExercises: { orderBy: { sortOrder: 'desc' }, take: 1 } },
+  })
+
+  let count = 0
+  for (const mp of matchingPlans) {
+    const maxSort = mp.plannedExercises[0]?.sortOrder ?? -1
+    await prisma.plannedExercise.create({
+      data: { workoutPlanId: mp.id, exerciseId, plannedSets, repRange, targetRir, sortOrder: maxSort + 1 },
+    })
+    count++
+  }
+
+  res.json({ added: count })
+})
+
+// ─── Reorder with propagation ────────────────────────────────────────
+
+// PUT /api/mesocycles/workout-plan/:planId/reorder-remaining
+router.put('/workout-plan/:planId/reorder-remaining', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const { exerciseOrder } = req.body as { exerciseOrder: number[] }
+  if (!exerciseOrder || !Array.isArray(exerciseOrder)) {
+    res.status(400).json({ error: 'exerciseOrder array is required' })
+    return
+  }
+
+  const plan = await prisma.workoutPlan.findUnique({
+    where: { id: parseInt(req.params.planId) },
+    include: {
+      mesocycleWeek: { include: { mesocycle: true } },
+      plannedExercises: { orderBy: { sortOrder: 'asc' } },
+    },
+  })
+  if (!plan || !plan.mesocycleWeek || plan.mesocycleWeek.mesocycle.userId !== userId) {
+    res.status(404).json({ error: 'Workout plan not found' })
+    return
+  }
+
+  // Apply reorder to current plan
+  await prisma.$transaction(
+    exerciseOrder.map((peId, index) =>
+      prisma.plannedExercise.update({ where: { id: peId }, data: { sortOrder: index } })
+    )
+  )
+
+  // Build exerciseId → sortOrder mapping from the new order
+  const currentPEs = plan.plannedExercises
+  const peMap = new Map(currentPEs.map(pe => [pe.id, pe]))
+  const newOrderMap = new Map<number, number>() // exerciseId → new sortOrder
+  for (let i = 0; i < exerciseOrder.length; i++) {
+    const pe = peMap.get(exerciseOrder[i])
+    if (pe) newOrderMap.set(pe.exerciseId, i)
+  }
+
+  const { mesocycleId, weekNumber } = plan.mesocycleWeek
+
+  // Find future matching plans and apply same exercise order
+  const futurePlans = await prisma.workoutPlan.findMany({
+    where: {
+      label: plan.label,
+      mesocycleWeek: { mesocycleId, weekNumber: { gt: weekNumber } },
+    },
+    include: { plannedExercises: true },
+  })
+
+  for (const fp of futurePlans) {
+    const updates = fp.plannedExercises
+      .filter(pe => newOrderMap.has(pe.exerciseId))
+      .map(pe =>
+        prisma.plannedExercise.update({
+          where: { id: pe.id },
+          data: { sortOrder: newOrderMap.get(pe.exerciseId)! },
+        })
+      )
+    if (updates.length > 0) await prisma.$transaction(updates)
+  }
+
+  res.json({ success: true })
+})
+
+// ─── Exercise notes (with propagation across mesocycle) ──────────────
+
+// PUT /api/mesocycles/planned-exercise/:id/notes
+router.put('/planned-exercise/:id/notes', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const { notes, propagate = true } = req.body as { notes: string; propagate?: boolean }
+
+  const pe = await prisma.plannedExercise.findUnique({
+    where: { id: parseInt(req.params.id) },
+    include: { workoutPlan: { include: { mesocycleWeek: { include: { mesocycle: true } } } } },
+  })
+  if (!pe || pe.workoutPlan.mesocycleWeek?.mesocycle.userId !== userId) {
+    res.status(404).json({ error: 'Planned exercise not found' })
+    return
+  }
+
+  // Update this exercise's notes
+  await prisma.plannedExercise.update({ where: { id: pe.id }, data: { notes } })
+
+  if (propagate && pe.workoutPlan.mesocycleWeek) {
+    const { mesocycleId, weekNumber } = pe.workoutPlan.mesocycleWeek
+
+    // Update same exercise in same day-label for future weeks
+    const matchingPEs = await prisma.plannedExercise.findMany({
+      where: {
+        exerciseId: pe.exerciseId,
+        workoutPlan: {
+          label: pe.workoutPlan.label,
+          mesocycleWeek: { mesocycleId, weekNumber: { gt: weekNumber } },
+        },
+      },
+    })
+
+    if (matchingPEs.length > 0) {
+      await prisma.$transaction(
+        matchingPEs.map(mpe =>
+          prisma.plannedExercise.update({ where: { id: mpe.id }, data: { notes } })
+        )
+      )
+    }
+  }
+
+  res.json({ success: true })
+})
+
 // DELETE /api/mesocycles/:id
 router.delete('/:id', async (req, res) => {
   const { userId } = req as unknown as AuthRequest

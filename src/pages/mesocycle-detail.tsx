@@ -1,6 +1,12 @@
 import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useMesocycle, useActivateMesocycle, useSwapExercise, useSwapExerciseRemaining, type PlannedExercise, type Mesocycle } from '@/hooks/use-mesocycles'
+import {
+  useMesocycle, useActivateMesocycle, useSwapExercise, useSwapExerciseRemaining,
+  useReorderExercises, useReorderExercisesRemaining,
+  useAddExerciseToPlan, useAddExercisePropagated,
+  useUpdateExerciseNotes,
+  type PlannedExercise, type Mesocycle, type WorkoutPlan,
+} from '@/hooks/use-mesocycles'
 import { useExercises } from '@/hooks/use-exercises'
 import { useCreateSession } from '@/hooks/use-sessions'
 import { ApiError } from '@/lib/api'
@@ -11,7 +17,7 @@ import { Input } from '@/components/ui/input'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
-import { ArrowLeft, Play, Dumbbell, ArrowLeftRight, Star, Search } from 'lucide-react'
+import { ArrowLeft, Play, Dumbbell, ArrowLeftRight, Star, Search, Plus, ChevronUp, ChevronDown, StickyNote } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -162,10 +168,16 @@ function PlanningView({
   meso,
   onStartSession,
   onSwap,
+  onAddExercise,
+  onMoveExercise,
+  onEditNotes,
 }: {
   meso: Mesocycle
   onStartSession: (planId: number) => void
   onSwap: (pe: PlannedExercise) => void
+  onAddExercise: (plan: WorkoutPlan) => void
+  onMoveExercise: (plan: WorkoutPlan, peIndex: number, direction: 'up' | 'down') => void
+  onEditNotes: (pe: PlannedExercise) => void
 }) {
   const createSession = useCreateSession()
 
@@ -205,16 +217,18 @@ function PlanningView({
                     <CardTitle className="text-sm">
                       {DAY_LABELS[plan.dayOfWeek]} — {plan.label || 'Workout'}
                     </CardTitle>
-                    {meso.status === 'active' && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => onStartSession(plan.id)}
-                        disabled={createSession.isPending}
-                      >
-                        <Dumbbell className="mr-1 h-3 w-3" /> Log
-                      </Button>
-                    )}
+                    <div className="flex gap-1">
+                      {meso.status === 'active' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => onStartSession(plan.id)}
+                          disabled={createSession.isPending}
+                        >
+                          <Dumbbell className="mr-1 h-3 w-3" /> Log
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <div className="flex gap-1">
                     {plan.muscleGroups.map((mg: string) => (
@@ -225,23 +239,61 @@ function PlanningView({
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  <div className="space-y-1.5">
-                    {plan.plannedExercises.map((pe) => (
-                      <div key={pe.id} className="flex items-center gap-2 text-sm group">
-                        <button
-                          onClick={() => onSwap(pe)}
-                          className="shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-                          title="Swap exercise"
-                        >
-                          <ArrowLeftRight className="h-3.5 w-3.5" />
-                        </button>
-                        <span className="truncate text-foreground flex-1">{pe.exercise.name}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {pe.plannedSets}×{pe.repRange} @RIR {pe.targetRir}
-                        </span>
+                  <div className="space-y-1">
+                    {plan.plannedExercises.map((pe, idx) => (
+                      <div key={pe.id}>
+                        <div className="flex items-center gap-1 text-sm group">
+                          {/* Move up/down */}
+                          <div className="flex flex-col shrink-0">
+                            <button
+                              onClick={() => onMoveExercise(plan, idx, 'up')}
+                              disabled={idx === 0}
+                              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-20"
+                            >
+                              <ChevronUp className="h-3 w-3" />
+                            </button>
+                            <button
+                              onClick={() => onMoveExercise(plan, idx, 'down')}
+                              disabled={idx === plan.plannedExercises.length - 1}
+                              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-20"
+                            >
+                              <ChevronDown className="h-3 w-3" />
+                            </button>
+                          </div>
+                          <button
+                            onClick={() => onSwap(pe)}
+                            className="shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                            title="Swap exercise"
+                          >
+                            <ArrowLeftRight className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={() => onEditNotes(pe)}
+                            className={cn(
+                              'shrink-0 p-1 rounded hover:bg-muted transition-colors',
+                              pe.notes ? 'text-yellow-500' : 'text-muted-foreground hover:text-foreground',
+                            )}
+                            title="Notes"
+                          >
+                            <StickyNote className="h-3.5 w-3.5" />
+                          </button>
+                          <span className="truncate text-foreground flex-1">{pe.exercise.name}</span>
+                          <span className="shrink-0 text-xs text-muted-foreground">
+                            {pe.plannedSets}×{pe.repRange} @RIR {pe.targetRir}
+                          </span>
+                        </div>
+                        {pe.notes && (
+                          <p className="text-[10px] italic text-yellow-500/80 ml-[72px] -mt-0.5">{pe.notes}</p>
+                        )}
                       </div>
                     ))}
                   </div>
+                  <button
+                    onClick={() => onAddExercise(plan)}
+                    className="mt-2 w-full flex items-center justify-center gap-1 p-1.5 rounded border border-dashed border-muted-foreground/30 text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  >
+                    <Plus className="h-3 w-3" /> Add Exercise
+                  </button>
                 </CardContent>
               </Card>
             ))}
@@ -262,18 +314,36 @@ export default function MesocycleDetailPage() {
   const createSession = useCreateSession()
   const swapExercise = useSwapExercise()
   const swapRemaining = useSwapExerciseRemaining()
+  const reorderExercises = useReorderExercises()
+  const reorderRemaining = useReorderExercisesRemaining()
+  const addExercise = useAddExerciseToPlan()
+  const addExercisePropagated = useAddExercisePropagated()
+  const updateNotes = useUpdateExerciseNotes()
 
+  // Swap dialog state
   const [swapTarget, setSwapTarget] = useState<PlannedExercise | null>(null)
   const [swapSearch, setSwapSearch] = useState('')
   const [swapSelectedId, setSwapSelectedId] = useState<number | null>(null)
-  // For active mesocycles, allow toggling between calendar and detail view
+  // View toggle
   const [showDetailView, setShowDetailView] = useState(false)
+  // Add exercise dialog state
+  const [addTarget, setAddTarget] = useState<WorkoutPlan | null>(null)
+  const [addSearch, setAddSearch] = useState('')
+  const [addSelectedId, setAddSelectedId] = useState<number | null>(null)
+  // Reorder propagation dialog state
+  const [reorderPending, setReorderPending] = useState<{ plan: WorkoutPlan; order: number[] } | null>(null)
+  // Notes dialog state
+  const [notesTarget, setNotesTarget] = useState<PlannedExercise | null>(null)
+  const [notesText, setNotesText] = useState('')
 
-  // Fetch exercises filtered by the swap target's primary muscle
+  // Fetch exercises for swap dialog
   const primaryMuscle = swapTarget?.exercise.primaryMuscles[0] || ''
   const { data: alternatives } = useExercises(
     swapTarget ? { muscle: primaryMuscle } : {}
   )
+
+  // Fetch all exercises for add dialog
+  const { data: allExercises } = useExercises({})
 
   const filteredAlternatives = alternatives
     ?.filter(ex => ex.id !== swapTarget?.exerciseId)
@@ -282,6 +352,14 @@ export default function MesocycleDetailPage() {
       if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1
       return b.sfrRating - a.sfrRating
     })
+
+  const filteredAddExercises = allExercises
+    ?.filter(ex => !addSearch || ex.name.toLowerCase().includes(addSearch.toLowerCase()))
+    .sort((a, b) => {
+      if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1
+      return b.sfrRating - a.sfrRating
+    })
+    .slice(0, 50)
 
   const handleSwap = async (exerciseId: number, forRemaining: boolean) => {
     if (!swapTarget) return
@@ -304,6 +382,48 @@ export default function MesocycleDetailPage() {
         navigate(`/session/${err.data.existingSessionId}`)
       }
     }
+  }
+
+  const handleAddExercise = async (exerciseId: number, propagate: boolean) => {
+    if (!addTarget) return
+    if (propagate) {
+      await addExercisePropagated.mutateAsync({ workoutPlanId: addTarget.id, exerciseId })
+    } else {
+      await addExercise.mutateAsync({ workoutPlanId: addTarget.id, exerciseId })
+    }
+    setAddTarget(null)
+    setAddSearch('')
+    setAddSelectedId(null)
+  }
+
+  const handleMoveExercise = (plan: WorkoutPlan, peIndex: number, direction: 'up' | 'down') => {
+    const exercises = [...plan.plannedExercises]
+    const targetIndex = direction === 'up' ? peIndex - 1 : peIndex + 1
+    if (targetIndex < 0 || targetIndex >= exercises.length) return
+
+    // Swap the two
+    ;[exercises[peIndex], exercises[targetIndex]] = [exercises[targetIndex], exercises[peIndex]]
+    const newOrder = exercises.map(pe => pe.id)
+
+    // Show propagation choice
+    setReorderPending({ plan, order: newOrder })
+  }
+
+  const handleReorderConfirm = async (propagate: boolean) => {
+    if (!reorderPending) return
+    if (propagate) {
+      await reorderRemaining.mutateAsync({ workoutPlanId: reorderPending.plan.id, exerciseOrder: reorderPending.order })
+    } else {
+      await reorderExercises.mutateAsync({ workoutPlanId: reorderPending.plan.id, exerciseOrder: reorderPending.order })
+    }
+    setReorderPending(null)
+  }
+
+  const handleSaveNotes = async () => {
+    if (!notesTarget) return
+    await updateNotes.mutateAsync({ plannedExerciseId: notesTarget.id, notes: notesText })
+    setNotesTarget(null)
+    setNotesText('')
   }
 
   if (isLoading) {
@@ -365,7 +485,10 @@ export default function MesocycleDetailPage() {
         <PlanningView
           meso={meso}
           onStartSession={handleStartSession}
-          onSwap={(pe) => { setSwapTarget(pe); setSwapSearch('') }}
+          onSwap={(pe) => { setSwapTarget(pe); setSwapSearch(''); setSwapSelectedId(null) }}
+          onAddExercise={(plan) => { setAddTarget(plan); setAddSearch(''); setAddSelectedId(null) }}
+          onMoveExercise={handleMoveExercise}
+          onEditNotes={(pe) => { setNotesTarget(pe); setNotesText(pe.notes || '') }}
         />
       )}
 
@@ -438,6 +561,134 @@ export default function MesocycleDetailPage() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Exercise Dialog */}
+      <Dialog open={!!addTarget} onOpenChange={(open) => { if (!open) { setAddTarget(null); setAddSearch(''); setAddSelectedId(null) } }}>
+        <DialogContent className="max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-base">Add Exercise</DialogTitle>
+            <DialogDescription>
+              Add an exercise to {addTarget?.label || 'this workout'}
+            </DialogDescription>
+          </DialogHeader>
+
+          {addSelectedId ? (
+            <div className="space-y-3 py-4">
+              <p className="text-sm text-center">
+                Add <span className="font-medium">{filteredAddExercises?.find(e => e.id === addSelectedId)?.name}</span>
+              </p>
+              <div className="grid grid-cols-1 gap-2">
+                <Button variant="outline" onClick={() => handleAddExercise(addSelectedId, false)} disabled={addExercise.isPending || addExercisePropagated.isPending}>
+                  This week only
+                </Button>
+                <Button onClick={() => handleAddExercise(addSelectedId, true)} disabled={addExercise.isPending || addExercisePropagated.isPending}>
+                  This week + all remaining weeks
+                </Button>
+              </div>
+              <Button variant="ghost" className="w-full" onClick={() => setAddSelectedId(null)}>
+                Back
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search exercises..."
+                  value={addSearch}
+                  onChange={(e) => setAddSearch(e.target.value)}
+                  className="pl-9"
+                />
+              </div>
+
+              <div className="flex-1 overflow-y-auto space-y-1 min-h-0 max-h-[50vh] -mx-2 px-2">
+                {filteredAddExercises?.map((ex) => (
+                  <button
+                    key={ex.id}
+                    onClick={() => setAddSelectedId(ex.id)}
+                    className="w-full flex items-center gap-3 p-2.5 rounded-lg text-left hover:bg-muted transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        {ex.isFavorite && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 shrink-0" />}
+                        <span className="text-sm font-medium truncate">{ex.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[10px] text-muted-foreground">{ex.equipment}</span>
+                        <span className="text-[10px] text-muted-foreground">{ex.primaryMuscles.join(', ')}</span>
+                        <span className="text-[10px] text-muted-foreground">{ex.defaultRepRange}</span>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+                {filteredAddExercises?.length === 0 && (
+                  <p className="text-center text-sm text-muted-foreground py-6">
+                    No matching exercises found
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Reorder Propagation Dialog */}
+      <Dialog open={!!reorderPending} onOpenChange={(open) => { if (!open) setReorderPending(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-base">Apply Reorder</DialogTitle>
+            <DialogDescription>
+              Apply this exercise order change to future weeks too?
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-2 pt-2">
+            <Button variant="outline" onClick={() => handleReorderConfirm(false)} disabled={reorderExercises.isPending || reorderRemaining.isPending}>
+              This week only
+            </Button>
+            <Button onClick={() => handleReorderConfirm(true)} disabled={reorderExercises.isPending || reorderRemaining.isPending}>
+              This week + all remaining weeks
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Notes Dialog */}
+      <Dialog open={!!notesTarget} onOpenChange={(open) => { if (!open) { setNotesTarget(null); setNotesText('') } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-base">Exercise Notes</DialogTitle>
+            <DialogDescription>
+              {notesTarget?.exercise.name} — notes propagate to all remaining weeks
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            placeholder="e.g. Use close grip, pause at bottom..."
+            value={notesText}
+            onChange={(e) => setNotesText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNotes() }}
+          />
+          <div className="flex gap-2 justify-end">
+            {notesTarget?.notes && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  if (!notesTarget) return
+                  await updateNotes.mutateAsync({ plannedExerciseId: notesTarget.id, notes: '' })
+                  setNotesTarget(null)
+                  setNotesText('')
+                }}
+                disabled={updateNotes.isPending}
+              >
+                Clear
+              </Button>
+            )}
+            <Button size="sm" onClick={handleSaveNotes} disabled={updateNotes.isPending}>
+              Save
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
