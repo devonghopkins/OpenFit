@@ -11,6 +11,7 @@ export interface LoggedSet {
   rirAchieved: number | null
   tempo: string | null
   isWarmup: boolean
+  isSkipped: boolean
   notes: string | null
   exercise: {
     id: number
@@ -98,6 +99,7 @@ export function useLogSet() {
       reps: number
       rirAchieved?: number
       isWarmup?: boolean
+      isSkipped?: boolean
       notes?: string
     }) =>
       api<LoggedSet>(`/sessions/${sessionId}/sets`, { method: 'POST', body: JSON.stringify(data) }),

@@ -143,6 +143,8 @@ router.post('/:id/generate', async (req, res) => {
 
   const trainingDays = JSON.parse(mesocycle.trainingDays || '[]')
   const focusMuscles = JSON.parse(mesocycle.focusMuscles || '[]')
+  const seedFromMesocycleId =
+    typeof req.body?.seedFromMesocycleId === 'number' ? req.body.seedFromMesocycleId : null
 
   const result = await generateMesocycle({
     mesocycleId: mesocycle.id,
@@ -151,6 +153,7 @@ router.post('/:id/generate', async (req, res) => {
     weeks: mesocycle.weeks,
     progression: mesocycle.progression as 'Conservative' | 'Standard' | 'Aggressive',
     focusMuscles,
+    seedFromMesocycleId,
   })
 
   res.json(result)
@@ -168,6 +171,70 @@ router.put('/:id', async (req, res) => {
     data: data as never,
   })
   res.json(deserialize(mesocycle as unknown as Record<string, unknown>))
+})
+
+// POST /api/mesocycles/:id/complete — mark meso completed and auto-skip remaining sets
+router.post('/:id/complete', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const mesocycleId = parseInt(req.params.id)
+
+  const mesocycle = await prisma.mesocycle.findUnique({ where: { id: mesocycleId, userId } })
+  if (!mesocycle) {
+    res.status(404).json({ error: 'Mesocycle not found' })
+    return
+  }
+
+  // Find all in-progress sessions belonging to this mesocycle
+  const sessions = await prisma.session.findMany({
+    where: {
+      userId,
+      completed: false,
+      workoutPlan: { mesocycleWeek: { mesocycleId } },
+    },
+    include: {
+      workoutPlan: {
+        include: { plannedExercises: true },
+      },
+      loggedSets: true,
+    },
+  })
+
+  // For each in-progress session, fill in skipped sets so plannedSets is satisfied
+  for (const session of sessions) {
+    if (!session.workoutPlan) continue
+    const setsByExercise = new Map<number, number>() // exerciseId → max setNumber logged
+    for (const ls of session.loggedSets) {
+      const cur = setsByExercise.get(ls.exerciseId) ?? 0
+      setsByExercise.set(ls.exerciseId, Math.max(cur, ls.setNumber))
+    }
+    for (const pe of session.workoutPlan.plannedExercises) {
+      const last = setsByExercise.get(pe.exerciseId) ?? 0
+      const remaining = Math.max(pe.plannedSets - last, 0)
+      for (let i = 0; i < remaining; i++) {
+        await prisma.loggedSet.create({
+          data: {
+            sessionId: session.id,
+            exerciseId: pe.exerciseId,
+            setNumber: last + i + 1,
+            weight: 0,
+            reps: 0,
+            isSkipped: true,
+          },
+        })
+      }
+    }
+    await prisma.session.update({
+      where: { id: session.id },
+      data: { completed: true },
+    })
+  }
+
+  const updated = await prisma.mesocycle.update({
+    where: { id: mesocycleId },
+    data: { status: 'completed' },
+  })
+
+  res.json({ ...deserialize(updated as unknown as Record<string, unknown>), sessionsClosed: sessions.length })
 })
 
 // POST /api/mesocycles/:id/activate
@@ -277,6 +344,60 @@ router.put('/planned-exercise/:id/swap-remaining', async (req, res) => {
   )
 
   res.json({ updated: matchingPEs.length })
+})
+
+// DELETE /api/mesocycles/planned-exercise/:id — remove with optional scope
+// scope: 'thisWeek' | 'remaining' | 'remainingAndFuture'
+router.delete('/planned-exercise/:id', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const scope = ((req.query.scope as string) || 'thisWeek') as
+    'thisWeek' | 'remaining' | 'remainingAndFuture'
+
+  const pe = await prisma.plannedExercise.findUnique({
+    where: { id: parseInt(req.params.id) },
+    include: {
+      workoutPlan: {
+        include: { mesocycleWeek: { include: { mesocycle: true } } },
+      },
+    },
+  })
+  if (!pe || pe.workoutPlan.mesocycleWeek?.mesocycle.userId !== userId) {
+    res.status(404).json({ error: 'Planned exercise not found' })
+    return
+  }
+
+  let deletedCount = 1
+  if (scope === 'thisWeek') {
+    await prisma.plannedExercise.delete({ where: { id: pe.id } })
+  } else {
+    // remaining + remainingAndFuture: delete this and all matching in current+future weeks
+    const { mesocycleId, weekNumber } = pe.workoutPlan.mesocycleWeek!
+    const matching = await prisma.plannedExercise.findMany({
+      where: {
+        exerciseId: pe.exerciseId,
+        workoutPlan: {
+          label: pe.workoutPlan.label,
+          mesocycleWeek: { mesocycleId, weekNumber: { gte: weekNumber } },
+        },
+      },
+      select: { id: true },
+    })
+    await prisma.plannedExercise.deleteMany({
+      where: { id: { in: matching.map(m => m.id) } },
+    })
+    deletedCount = matching.length
+
+    if (scope === 'remainingAndFuture') {
+      // Mark the exercise as excluded for this user, so future mesocycles won't pick it
+      await prisma.userExerciseOverride.upsert({
+        where: { userId_exerciseId: { userId, exerciseId: pe.exerciseId } },
+        update: { isExcluded: true },
+        create: { userId, exerciseId: pe.exerciseId, isExcluded: true },
+      })
+    }
+  }
+
+  res.json({ deleted: deletedCount, scope })
 })
 
 // PUT /api/mesocycles/workout-plan/:planId/reorder — reorder exercises in a workout plan

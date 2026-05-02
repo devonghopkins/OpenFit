@@ -26,6 +26,7 @@ export default function MesocyclesPage() {
   const [trainingDays, setTrainingDays] = useState<number[]>([1, 2, 4, 5])
   const [progression, setProgression] = useState('Standard')
   const [focusMuscles, setFocusMuscles] = useState<string[]>([])
+  const [seedFromMesocycleId, setSeedFromMesocycleId] = useState<number | null>(null)
 
   const toggleDay = (day: number) => {
     setTrainingDays(prev =>
@@ -48,9 +49,10 @@ export default function MesocyclesPage() {
         progression,
         focusMuscles,
       })
-      await generateMesocycle.mutateAsync(meso.id)
+      await generateMesocycle.mutateAsync({ id: meso.id, seedFromMesocycleId })
       setCreating(false)
       setName('')
+      setSeedFromMesocycleId(null)
       navigate(`/mesocycles/${meso.id}`)
     } catch (err) {
       console.error('Mesocycle creation failed:', err)
@@ -216,6 +218,23 @@ export default function MesocyclesPage() {
                   ))}
                 </div>
               )}
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Seed From Previous Mesocycle</label>
+              <select
+                value={seedFromMesocycleId ?? ''}
+                onChange={(e) => setSeedFromMesocycleId(e.target.value ? Number(e.target.value) : null)}
+                className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">None — fresh start</option>
+                {mesocycles?.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Reuse exercise selection and start at ~90% of last peak weight.
+              </p>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">

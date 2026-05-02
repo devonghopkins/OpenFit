@@ -84,9 +84,42 @@ export function useCreateMesocycle() {
 export function useGenerateMesocycle() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) =>
-      api<{ weeks: number; message: string }>(`/mesocycles/${id}/generate`, { method: 'POST' }),
+    mutationFn: ({ id, seedFromMesocycleId }: { id: number; seedFromMesocycleId?: number | null }) =>
+      api<{ weeks: number; message: string }>(`/mesocycles/${id}/generate`, {
+        method: 'POST',
+        body: JSON.stringify({ seedFromMesocycleId: seedFromMesocycleId ?? null }),
+      }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['mesocycles'] }),
+  })
+}
+
+export function useCompleteMesocycle() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) =>
+      api<{ sessionsClosed: number }>(`/mesocycles/${id}/complete`, { method: 'POST' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mesocycles'] })
+      qc.invalidateQueries({ queryKey: ['sessions'] })
+    },
+  })
+}
+
+export function useRemovePlannedExercise() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ plannedExerciseId, scope }: {
+      plannedExerciseId: number
+      scope: 'thisWeek' | 'remaining' | 'remainingAndFuture'
+    }) =>
+      api<{ deleted: number; scope: string }>(
+        `/mesocycles/planned-exercise/${plannedExerciseId}?scope=${scope}`,
+        { method: 'DELETE' },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mesocycles'] })
+      qc.invalidateQueries({ queryKey: ['sessions'] })
+    },
   })
 }
 

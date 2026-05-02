@@ -60,6 +60,7 @@ function progressSet(
   repFloor: number,
   repCeil: number,
   increment: number,
+  crossMesocycle: boolean,
 ): { weight: number; reps: number; reason: string } {
   const e1rm = effectiveE1RM(lastWeight, lastReps, lastRir)
 
@@ -88,11 +89,17 @@ function progressSet(
     } else {
       reason = `+1 rep → ${suggestedWeight} × ${suggestedReps}`
     }
-  } else {
+  } else if (crossMesocycle) {
+    // Across mesocycles: reset to floor and bump weight (intentional fresh start)
     suggestedWeight = roundToIncrement(lastWeight + increment, increment)
     const repsAtNew = repsForWeight(e1rm, suggestedWeight, targetRir)
     suggestedReps = Math.max(repFloor, Math.min(repCeil, repsAtNew))
-    reason = `Top of range → ${suggestedWeight} × ${suggestedReps}`
+    reason = `New meso → ${suggestedWeight} × ${suggestedReps}`
+  } else {
+    // Within a mesocycle: keep reps high, just bump weight (no rep reset)
+    suggestedWeight = roundToIncrement(lastWeight + increment, increment)
+    suggestedReps = lastReps
+    reason = `+${increment} lb @ ${lastReps} reps`
   }
 
   // Safety: never regress
@@ -111,17 +118,34 @@ interface LastSetData {
   rirAchieved: number | null
 }
 
+interface LastSessionResult {
+  sets: LastSetData[]
+  mesocycleId: number | null
+}
+
 async function getLastSessionSets(
   exerciseId: number,
   userId: string | undefined,
   workoutLabel: string | undefined,
-): Promise<LastSetData[]> {
+): Promise<LastSessionResult> {
+  const includeWithMeso = {
+    session: { include: { workoutPlan: { include: { mesocycleWeek: true } } } },
+  } as const
+
+  const mapSets = (rows: Array<{
+    setNumber: number; weight: number; reps: number; rirAchieved: number | null
+  }>): LastSetData[] =>
+    rows.sort((a, b) => a.setNumber - b.setNumber).map(s => ({
+      setNumber: s.setNumber, weight: s.weight, reps: s.reps, rirAchieved: s.rirAchieved,
+    }))
+
   // Try label-matched history first (same day slot from previous week)
   if (workoutLabel) {
     const labelSets = await prisma.loggedSet.findMany({
       where: {
         exerciseId,
         isWarmup: false,
+        isSkipped: false,
         session: {
           completed: true,
           ...(userId && { userId }),
@@ -130,20 +154,14 @@ async function getLastSessionSets(
       },
       orderBy: { createdAt: 'desc' },
       take: 20,
-      include: { session: true },
+      include: includeWithMeso,
     })
 
     if (labelSets.length > 0) {
       const lastSessionId = labelSets[0].sessionId
-      return labelSets
-        .filter(s => s.sessionId === lastSessionId)
-        .sort((a, b) => a.setNumber - b.setNumber)
-        .map(s => ({
-          setNumber: s.setNumber,
-          weight: s.weight,
-          reps: s.reps,
-          rirAchieved: s.rirAchieved,
-        }))
+      const filtered = labelSets.filter(s => s.sessionId === lastSessionId)
+      const meso = filtered[0]?.session?.workoutPlan?.mesocycleWeek?.mesocycleId ?? null
+      return { sets: mapSets(filtered), mesocycleId: meso }
     }
   }
 
@@ -152,6 +170,7 @@ async function getLastSessionSets(
     where: {
       exerciseId,
       isWarmup: false,
+      isSkipped: false,
       session: {
         completed: true,
         ...(userId && { userId }),
@@ -159,21 +178,15 @@ async function getLastSessionSets(
     },
     orderBy: { createdAt: 'desc' },
     take: 20,
-    include: { session: true },
+    include: includeWithMeso,
   })
 
-  if (allSets.length === 0) return []
+  if (allSets.length === 0) return { sets: [], mesocycleId: null }
 
   const lastSessionId = allSets[0].sessionId
-  return allSets
-    .filter(s => s.sessionId === lastSessionId)
-    .sort((a, b) => a.setNumber - b.setNumber)
-    .map(s => ({
-      setNumber: s.setNumber,
-      weight: s.weight,
-      reps: s.reps,
-      rirAchieved: s.rirAchieved,
-    }))
+  const filtered = allSets.filter(s => s.sessionId === lastSessionId)
+  const meso = filtered[0]?.session?.workoutPlan?.mesocycleWeek?.mesocycleId ?? null
+  return { sets: mapSets(filtered), mesocycleId: meso }
 }
 
 // ─── Multi-set prescription for one exercise ─────────────────────────
@@ -186,9 +199,10 @@ async function getMultiSetPrescription(
   incrementOverrides: Record<string, number> | undefined,
   userId: string | undefined,
   workoutLabel: string | undefined,
+  currentMesocycleId: number | null,
+  seededLoad: number | null,
 ): Promise<{ prescriptions: SetPrescription[]; adjustedPlannedSets: number }> {
-  const lastSets = await getLastSessionSets(exerciseId, userId, workoutLabel)
-  if (lastSets.length === 0) return { prescriptions: [], adjustedPlannedSets: plannedSets }
+  const { sets: lastSets, mesocycleId: lastMesocycleId } = await getLastSessionSets(exerciseId, userId, workoutLabel)
 
   const exercise = await prisma.exercise.findUnique({ where: { id: exerciseId } })
   const equipment = exercise?.equipment || 'Barbell'
@@ -197,6 +211,31 @@ async function getMultiSetPrescription(
   const [minReps, maxReps] = repRange.split('-').map(Number)
   const repFloor = minReps || 8
   const repCeil = maxReps || 12
+
+  // Cross-mesocycle when prior session was in a different mesocycle (or none)
+  const crossMesocycle =
+    currentMesocycleId !== null &&
+    lastMesocycleId !== null &&
+    lastMesocycleId !== currentMesocycleId
+
+  // Seeded fresh meso: explicit deload weight overrides the cross-meso bump for week 1
+  if (seededLoad && seededLoad > 0 && (lastSets.length === 0 || crossMesocycle)) {
+    const prescriptions: SetPrescription[] = []
+    for (let i = 0; i < plannedSets; i++) {
+      prescriptions.push({
+        setNumber: i + 1,
+        suggestedWeight: seededLoad,
+        suggestedReps: repFloor,
+        lastWeight: lastSets[i]?.weight ?? 0,
+        lastReps: lastSets[i]?.reps ?? 0,
+        e1rm: 0,
+        reason: `Deload start → ${seededLoad} × ${repFloor}`,
+      })
+    }
+    return { prescriptions, adjustedPlannedSets: plannedSets }
+  }
+
+  if (lastSets.length === 0) return { prescriptions: [], adjustedPlannedSets: plannedSets }
 
   // If user did more sets than planned, adjust upward
   const adjustedPlannedSets = Math.max(plannedSets, lastSets.length)
@@ -210,7 +249,7 @@ async function getMultiSetPrescription(
       // Progress from last session's actual per-set data
       const { weight, reps, reason } = progressSet(
         lastSet.weight, lastSet.reps, lastSet.rirAchieved,
-        targetRir, repFloor, repCeil, increment,
+        targetRir, repFloor, repCeil, increment, crossMesocycle,
       )
 
       const e1rm = effectiveE1RM(lastSet.weight, lastSet.reps, lastSet.rirAchieved)
@@ -251,6 +290,7 @@ export async function getWorkoutPrescriptions(
   const plan = await prisma.workoutPlan.findUnique({
     where: { id: workoutPlanId },
     include: {
+      mesocycleWeek: true,
       plannedExercises: {
         orderBy: { sortOrder: 'asc' },
         include: { exercise: true },
@@ -259,6 +299,7 @@ export async function getWorkoutPrescriptions(
   })
 
   if (!plan) return []
+  const currentMesocycleId = plan.mesocycleWeek?.mesocycleId ?? null
 
   // Load increment settings
   const settings = await prisma.setting.findMany({
@@ -282,6 +323,8 @@ export async function getWorkoutPrescriptions(
       incrementOverrides,
       userId,
       plan.label ?? undefined,
+      currentMesocycleId,
+      pe.suggestedLoad ?? null,
     )
 
     results.push({
@@ -303,7 +346,7 @@ export async function getLoadRecommendation(
   targetRir: number = 3,
   userId?: string,
 ) {
-  const lastSets = await getLastSessionSets(exerciseId, userId, undefined)
+  const { sets: lastSets } = await getLastSessionSets(exerciseId, userId, undefined)
   if (lastSets.length === 0) return null
 
   const bestSet = lastSets.reduce((best, s) =>
@@ -317,7 +360,7 @@ export async function getLoadRecommendation(
 
   const { weight, reason } = progressSet(
     bestSet.weight, bestSet.reps, bestSet.rirAchieved,
-    targetRir, 8, 12, 5,
+    targetRir, 8, 12, 5, true,
   )
 
   return {

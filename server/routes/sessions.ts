@@ -20,6 +20,7 @@ const logSetSchema = z.object({
   rirAchieved: z.number().int().min(0).max(5).optional(),
   tempo: z.string().optional(),
   isWarmup: z.boolean().default(false),
+  isSkipped: z.boolean().default(false),
   notes: z.string().optional(),
 })
 

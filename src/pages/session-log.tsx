@@ -5,7 +5,7 @@ import {
   useExerciseHistory, useWorkoutPrescriptions,
   type ExercisePrescription,
 } from '@/hooks/use-sessions'
-import { useSwapExercise, useSwapExerciseRemaining, useReorderExercises } from '@/hooks/use-mesocycles'
+import { useSwapExercise, useSwapExerciseRemaining, useReorderExercises, useRemovePlannedExercise } from '@/hooks/use-mesocycles'
 import { useExercises } from '@/hooks/use-exercises'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   ArrowLeft, Check, Timer, Trash2, Plus, History, ChevronUp, ChevronDown,
-  ArrowLeftRight, Search, Star, MoreVertical,
+  ArrowLeftRight, Search, Star, MoreVertical, SkipForward, X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -262,6 +262,7 @@ function ExerciseActions({
   isLast,
   onHistory,
   onReplace,
+  onRemove,
   onMoveUp,
   onMoveDown,
 }: {
@@ -270,6 +271,7 @@ function ExerciseActions({
   isLast: boolean
   onHistory: () => void
   onReplace: () => void
+  onRemove: () => void
   onMoveUp: () => void
   onMoveDown: () => void
 }) {
@@ -303,6 +305,9 @@ function ExerciseActions({
                 <button className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted transition-colors" onClick={() => { onReplace(); setOpen(false) }}>
                   <ArrowLeftRight className="h-3.5 w-3.5" /> Replace Exercise
                 </button>
+                <button className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted transition-colors text-volume-danger" onClick={() => { onRemove(); setOpen(false) }}>
+                  <X className="h-3.5 w-3.5" /> Remove Exercise
+                </button>
               </>
             )}
           </div>
@@ -321,6 +326,7 @@ export default function SessionLogPage() {
   const updateSession = useUpdateSession()
   const deleteSet = useDeleteSet()
   const reorderExercises = useReorderExercises()
+  const removePlannedExercise = useRemovePlannedExercise()
   const [startTime] = useState(Date.now())
 
   // Fetch prescriptions (auto-calculated weight/reps)
@@ -346,6 +352,9 @@ export default function SessionLogPage() {
   const [historyTarget, setHistoryTarget] = useState<{ exerciseId: number; exerciseName: string } | null>(null)
   const [replaceTarget, setReplaceTarget] = useState<{
     plannedExerciseId: number; exerciseId: number; exerciseName: string; primaryMuscle: string
+  } | null>(null)
+  const [removeTarget, setRemoveTarget] = useState<{
+    plannedExerciseId: number; exerciseName: string
   } | null>(null)
 
   const getForm = (exerciseId: number): SetFormData => {
@@ -386,12 +395,12 @@ export default function SessionLogPage() {
   // Group logged sets by exercise
   const setsByExercise = new Map<number, Array<{
     id: number; exerciseId: number; setNumber: number; weight: number; reps: number;
-    rirAchieved: number | null; isWarmup: boolean; exercise: { name: string; equipment: string }
+    rirAchieved: number | null; isWarmup: boolean; isSkipped: boolean; exercise: { name: string; equipment: string }
   }>>()
   if (session?.loggedSets) {
     for (const ls of session.loggedSets as Array<{
       id: number; exerciseId: number; setNumber: number; weight: number; reps: number;
-      rirAchieved: number | null; isWarmup: boolean; exercise: { name: string; equipment: string }
+      rirAchieved: number | null; isWarmup: boolean; isSkipped: boolean; exercise: { name: string; equipment: string }
     }>) {
       const existing = setsByExercise.get(ls.exerciseId) || []
       existing.push(ls)
@@ -406,6 +415,19 @@ export default function SessionLogPage() {
   }>
 
   const hasMesocycle = !!(session?.workoutPlan as Record<string, unknown>)?.mesocycleWeek
+
+  const handleSkipSet = (exerciseId: number) => {
+    const existingSets = setsByExercise.get(exerciseId) || []
+    const setNumber = existingSets.length + 1
+    logSet.mutate({
+      sessionId,
+      exerciseId,
+      setNumber,
+      weight: 0,
+      reps: 0,
+      isSkipped: true,
+    })
+  }
 
   const handleLogSet = (exerciseId: number) => {
     const form = getForm(exerciseId)
@@ -530,10 +552,10 @@ export default function SessionLogPage() {
 
         // Set progress: logged / target (use adjusted set count if user did extra)
         const targetSets = rx?.adjustedPlannedSets || entry.plannedSets || 0
-        const loggedCount = logged.filter(s => !s.isWarmup).length
+        const resolvedCount = logged.filter(s => !s.isWarmup).length // logged + skipped both count
 
-        // Ghost sets: prescriptions not yet logged
-        const ghostSets = rx?.prescriptions.slice(loggedCount) || []
+        // Ghost sets: prescriptions not yet resolved
+        const ghostSets = rx?.prescriptions.slice(resolvedCount) || []
 
         return (
           <Card key={entry.exerciseId}>
@@ -544,10 +566,10 @@ export default function SessionLogPage() {
                     <CardTitle className="text-sm">{entry.exerciseName}</CardTitle>
                     {targetSets > 0 && (
                       <Badge
-                        variant={loggedCount >= targetSets ? 'safe' : 'secondary'}
+                        variant={resolvedCount >= targetSets ? 'safe' : 'secondary'}
                         className="text-[10px]"
                       >
-                        {loggedCount}/{targetSets} sets
+                        {resolvedCount}/{targetSets} sets
                       </Badge>
                     )}
                   </div>
@@ -582,6 +604,14 @@ export default function SessionLogPage() {
                   }}
                   onMoveUp={() => handleMoveExercise(plannedIdx, 'up')}
                   onMoveDown={() => handleMoveExercise(plannedIdx, 'down')}
+                  onRemove={() => {
+                    if (entry.plannedExerciseId) {
+                      setRemoveTarget({
+                        plannedExerciseId: entry.plannedExerciseId,
+                        exerciseName: entry.exerciseName,
+                      })
+                    }
+                  }}
                 />
               </div>
             </CardHeader>
@@ -592,15 +622,20 @@ export default function SessionLogPage() {
                   key={set.id}
                   className={cn(
                     'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm',
-                    set.isWarmup ? 'bg-muted/50 text-muted-foreground' : 'bg-muted'
+                    set.isSkipped
+                      ? 'bg-muted/30 text-muted-foreground italic'
+                      : set.isWarmup ? 'bg-muted/50 text-muted-foreground' : 'bg-muted'
                   )}
                 >
                   <span className="w-6 text-center text-xs text-muted-foreground">{set.setNumber}</span>
-                  <span className="flex-1">{set.weight} lb × {set.reps}</span>
-                  {set.rirAchieved !== null && (
+                  <span className="flex-1">
+                    {set.isSkipped ? 'Skipped' : `${set.weight} lb × ${set.reps}`}
+                  </span>
+                  {!set.isSkipped && set.rirAchieved !== null && (
                     <Badge variant="secondary" className="text-[10px]">RIR {set.rirAchieved}</Badge>
                   )}
                   {set.isWarmup && <Badge variant="secondary" className="text-[10px]">W</Badge>}
+                  {set.isSkipped && <Badge variant="secondary" className="text-[10px]">Skip</Badge>}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -655,6 +690,17 @@ export default function SessionLogPage() {
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
+                {ghostSets.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 shrink-0 text-muted-foreground"
+                    onClick={() => handleSkipSet(entry.exerciseId)}
+                    title="Skip set"
+                  >
+                    <SkipForward className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -709,6 +755,61 @@ export default function SessionLogPage() {
         hasMesocycle={hasMesocycle}
         onClose={() => setReplaceTarget(null)}
       />
+
+      {/* Remove Exercise Dialog */}
+      <Dialog open={!!removeTarget} onOpenChange={(o) => { if (!o) setRemoveTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-base">Remove Exercise</DialogTitle>
+            <DialogDescription>
+              Remove <span className="font-medium text-foreground">{removeTarget?.exerciseName}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-2 py-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (removeTarget) {
+                  removePlannedExercise.mutate(
+                    { plannedExerciseId: removeTarget.plannedExerciseId, scope: 'thisWeek' },
+                    { onSuccess: () => setRemoveTarget(null) },
+                  )
+                }
+              }}
+              disabled={removePlannedExercise.isPending}
+            >
+              This week only
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (removeTarget) {
+                  removePlannedExercise.mutate(
+                    { plannedExerciseId: removeTarget.plannedExerciseId, scope: 'remaining' },
+                    { onSuccess: () => setRemoveTarget(null) },
+                  )
+                }
+              }}
+              disabled={removePlannedExercise.isPending}
+            >
+              This week + remaining weeks
+            </Button>
+            <Button
+              onClick={() => {
+                if (removeTarget) {
+                  removePlannedExercise.mutate(
+                    { plannedExerciseId: removeTarget.plannedExerciseId, scope: 'remainingAndFuture' },
+                    { onSuccess: () => setRemoveTarget(null) },
+                  )
+                }
+              }}
+              disabled={removePlannedExercise.isPending}
+            >
+              Remaining weeks + exclude from future mesocycles
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

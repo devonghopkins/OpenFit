@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  useMesocycle, useActivateMesocycle, useSwapExercise, useSwapExerciseRemaining,
+  useMesocycle, useActivateMesocycle, useCompleteMesocycle, useSwapExercise, useSwapExerciseRemaining,
   useReorderExercises, useReorderExercisesRemaining,
   useAddExerciseToPlan, useAddExercisePropagated,
   useUpdateExerciseNotes,
@@ -311,6 +311,7 @@ export default function MesocycleDetailPage() {
   const navigate = useNavigate()
   const { data: meso, isLoading } = useMesocycle(Number(id))
   const activateMesocycle = useActivateMesocycle()
+  const completeMesocycle = useCompleteMesocycle()
   const createSession = useCreateSession()
   const swapExercise = useSwapExercise()
   const swapRemaining = useSwapExerciseRemaining()
@@ -451,9 +452,23 @@ export default function MesocycleDetailPage() {
             {meso.weeks}wk + deload &middot; {meso.progression}
           </p>
         </div>
-        {!isActive && (
+        {!isActive && meso.status !== 'completed' && (
           <Button size="sm" className="shrink-0" onClick={() => activateMesocycle.mutate(meso.id)}>
             <Play className="mr-1 h-3 w-3" /> Activate
+          </Button>
+        )}
+        {isActive && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => {
+              if (confirm('Complete this mesocycle? Any open sessions will be auto-finished with skipped sets.')) {
+                completeMesocycle.mutate(meso.id)
+              }
+            }}
+          >
+            Complete
           </Button>
         )}
       </div>
