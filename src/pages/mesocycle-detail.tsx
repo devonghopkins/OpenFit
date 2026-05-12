@@ -4,7 +4,7 @@ import {
   useMesocycle, useActivateMesocycle, useCompleteMesocycle, useSwapExercise, useSwapExerciseRemaining,
   useReorderExercises, useReorderExercisesRemaining,
   useAddExerciseToPlan, useAddExercisePropagated,
-  useUpdateExerciseNotes,
+  useUpdateExerciseNotes, useRemovePlannedExercise,
   type PlannedExercise, type Mesocycle, type WorkoutPlan,
 } from '@/hooks/use-mesocycles'
 import { useExercises } from '@/hooks/use-exercises'
@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
-import { ArrowLeft, Play, Dumbbell, ArrowLeftRight, Star, Search, Plus, ChevronUp, ChevronDown, StickyNote } from 'lucide-react'
+import { ArrowLeft, Play, Dumbbell, ArrowLeftRight, Star, Search, Plus, ChevronUp, ChevronDown, StickyNote, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -171,6 +171,7 @@ function PlanningView({
   onAddExercise,
   onMoveExercise,
   onEditNotes,
+  onRemove,
 }: {
   meso: Mesocycle
   onStartSession: (planId: number) => void
@@ -178,6 +179,7 @@ function PlanningView({
   onAddExercise: (plan: WorkoutPlan) => void
   onMoveExercise: (plan: WorkoutPlan, peIndex: number, direction: 'up' | 'down') => void
   onEditNotes: (pe: PlannedExercise) => void
+  onRemove: (pe: PlannedExercise) => void
 }) {
   const createSession = useCreateSession()
 
@@ -277,6 +279,13 @@ function PlanningView({
                           >
                             <StickyNote className="h-3.5 w-3.5" />
                           </button>
+                          <button
+                            onClick={() => onRemove(pe)}
+                            className="shrink-0 p-1 rounded hover:bg-muted text-muted-foreground hover:text-volume-danger transition-colors"
+                            title="Remove exercise"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
                           <span className="truncate text-foreground flex-1">{pe.exercise.name}</span>
                           <span className="shrink-0 text-xs text-muted-foreground">
                             {pe.plannedSets}×{pe.repRange} @RIR {pe.targetRir}
@@ -320,6 +329,7 @@ export default function MesocycleDetailPage() {
   const addExercise = useAddExerciseToPlan()
   const addExercisePropagated = useAddExercisePropagated()
   const updateNotes = useUpdateExerciseNotes()
+  const removePlannedExercise = useRemovePlannedExercise()
 
   // Swap dialog state
   const [swapTarget, setSwapTarget] = useState<PlannedExercise | null>(null)
@@ -336,6 +346,8 @@ export default function MesocycleDetailPage() {
   // Notes dialog state
   const [notesTarget, setNotesTarget] = useState<PlannedExercise | null>(null)
   const [notesText, setNotesText] = useState('')
+  // Remove dialog state
+  const [removeTarget, setRemoveTarget] = useState<PlannedExercise | null>(null)
 
   // Fetch exercises for swap dialog
   const primaryMuscle = swapTarget?.exercise.primaryMuscles[0] || ''
@@ -504,8 +516,64 @@ export default function MesocycleDetailPage() {
           onAddExercise={(plan) => { setAddTarget(plan); setAddSearch(''); setAddSelectedId(null) }}
           onMoveExercise={handleMoveExercise}
           onEditNotes={(pe) => { setNotesTarget(pe); setNotesText(pe.notes || '') }}
+          onRemove={(pe) => setRemoveTarget(pe)}
         />
       )}
+
+      {/* Remove Exercise Dialog */}
+      <Dialog open={!!removeTarget} onOpenChange={(open) => { if (!open) setRemoveTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-base">Remove Exercise</DialogTitle>
+            <DialogDescription>
+              Remove <span className="font-medium text-foreground">{removeTarget?.exercise.name}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-1 gap-2 py-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (removeTarget) {
+                  removePlannedExercise.mutate(
+                    { plannedExerciseId: removeTarget.id, scope: 'thisWeek' },
+                    { onSuccess: () => setRemoveTarget(null) },
+                  )
+                }
+              }}
+              disabled={removePlannedExercise.isPending}
+            >
+              This week only
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (removeTarget) {
+                  removePlannedExercise.mutate(
+                    { plannedExerciseId: removeTarget.id, scope: 'remaining' },
+                    { onSuccess: () => setRemoveTarget(null) },
+                  )
+                }
+              }}
+              disabled={removePlannedExercise.isPending}
+            >
+              This week + remaining weeks
+            </Button>
+            <Button
+              onClick={() => {
+                if (removeTarget) {
+                  removePlannedExercise.mutate(
+                    { plannedExerciseId: removeTarget.id, scope: 'remainingAndFuture' },
+                    { onSuccess: () => setRemoveTarget(null) },
+                  )
+                }
+              }}
+              disabled={removePlannedExercise.isPending}
+            >
+              Remaining weeks + exclude from future mesocycles
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Swap Exercise Dialog */}
       <Dialog open={!!swapTarget} onOpenChange={(open) => { if (!open) { setSwapTarget(null); setSwapSearch(''); setSwapSelectedId(null) } }}>
