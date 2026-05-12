@@ -105,6 +105,25 @@ export function useCompleteMesocycle() {
   })
 }
 
+export function useUpdatePlannedExerciseSets() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ plannedExerciseId, plannedSets, scope }: {
+      plannedExerciseId: number
+      plannedSets: number
+      scope: 'thisWeek' | 'remaining'
+    }) =>
+      api<{ success: boolean }>(`/mesocycles/planned-exercise/${plannedExerciseId}/sets`, {
+        method: 'PUT',
+        body: JSON.stringify({ plannedSets, scope }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mesocycles'] })
+      qc.invalidateQueries({ queryKey: ['sessions'] })
+    },
+  })
+}
+
 export function useRemovePlannedExercise() {
   const qc = useQueryClient()
   return useMutation({

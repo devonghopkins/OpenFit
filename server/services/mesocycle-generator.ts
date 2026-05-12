@@ -268,8 +268,9 @@ export async function generateMesocycle(options: GenerateOptions) {
         return (b.sfrRating ?? 0) - (a.sfrRating ?? 0)
       })
 
-      // 1 exercise if low volume, 2 if higher. Pick distinct exercises.
-      const exerciseCount = setsThisSession <= 3 ? 1 : 2
+      // 1 exercise if moderate volume, 2 only when we'd otherwise exceed 5 sets
+      // on a single exercise. Keeps low-volume muscles (4 sets) consolidated.
+      const exerciseCount = setsThisSession <= 5 ? 1 : 2
       const picked: typeof allExercises = []
       for (const ex of sorted) {
         if (picked.length >= exerciseCount) break

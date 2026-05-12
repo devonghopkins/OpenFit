@@ -32,6 +32,37 @@ function deserializeWorkoutPlan(row: Record<string, unknown>) {
   return result
 }
 
+// Recompute volumePlan for the given MesocycleWeek IDs based on current
+// PlannedExercises × plannedSets, attributed to each exercise's primary muscles.
+async function recomputeVolumePlans(mesocycleWeekIds: number[]) {
+  for (const mesocycleWeekId of mesocycleWeekIds) {
+    const week = await prisma.mesocycleWeek.findUnique({
+      where: { id: mesocycleWeekId },
+      include: {
+        workoutPlans: {
+          include: {
+            plannedExercises: { include: { exercise: true } },
+          },
+        },
+      },
+    })
+    if (!week) continue
+    const volumePlan: Record<string, number> = {}
+    for (const wp of week.workoutPlans) {
+      for (const pe of wp.plannedExercises) {
+        const muscles: string[] = JSON.parse(pe.exercise.primaryMuscles || '[]')
+        const primary = muscles[0]
+        if (!primary) continue
+        volumePlan[primary] = (volumePlan[primary] || 0) + pe.plannedSets
+      }
+    }
+    await prisma.mesocycleWeek.update({
+      where: { id: mesocycleWeekId },
+      data: { volumePlan: JSON.stringify(volumePlan) },
+    })
+  }
+}
+
 const createSchema = z.object({
   name: z.string().min(1),
   weeks: z.number().int().min(2).max(8).default(4),
@@ -367,7 +398,9 @@ router.delete('/planned-exercise/:id', async (req, res) => {
   }
 
   let deletedCount = 1
+  const affectedWeekIds = new Set<number>()
   if (scope === 'thisWeek') {
+    affectedWeekIds.add(pe.workoutPlan.mesocycleWeek!.id)
     await prisma.plannedExercise.delete({ where: { id: pe.id } })
   } else {
     // remaining + remainingAndFuture: delete this and all matching in current+future weeks
@@ -380,8 +413,11 @@ router.delete('/planned-exercise/:id', async (req, res) => {
           mesocycleWeek: { mesocycleId, weekNumber: { gte: weekNumber } },
         },
       },
-      select: { id: true },
+      select: { id: true, workoutPlan: { select: { mesocycleWeekId: true } } },
     })
+    for (const m of matching) {
+      if (m.workoutPlan?.mesocycleWeekId) affectedWeekIds.add(m.workoutPlan.mesocycleWeekId)
+    }
     await prisma.plannedExercise.deleteMany({
       where: { id: { in: matching.map(m => m.id) } },
     })
@@ -397,7 +433,63 @@ router.delete('/planned-exercise/:id', async (req, res) => {
     }
   }
 
+  await recomputeVolumePlans(Array.from(affectedWeekIds))
+
   res.json({ deleted: deletedCount, scope })
+})
+
+// PUT /api/mesocycles/planned-exercise/:id/sets — adjust plannedSets
+// Body: { plannedSets: number, scope: 'thisWeek' | 'remaining' }
+router.put('/planned-exercise/:id/sets', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const { plannedSets, scope = 'thisWeek' } = req.body as {
+    plannedSets: number
+    scope?: 'thisWeek' | 'remaining'
+  }
+  if (!Number.isInteger(plannedSets) || plannedSets < 0 || plannedSets > 20) {
+    res.status(400).json({ error: 'plannedSets must be an integer 0–20' })
+    return
+  }
+
+  const pe = await prisma.plannedExercise.findUnique({
+    where: { id: parseInt(req.params.id) },
+    include: {
+      workoutPlan: {
+        include: { mesocycleWeek: { include: { mesocycle: true } } },
+      },
+    },
+  })
+  if (!pe || pe.workoutPlan.mesocycleWeek?.mesocycle.userId !== userId) {
+    res.status(404).json({ error: 'Planned exercise not found' })
+    return
+  }
+
+  const affectedWeekIds = new Set<number>([pe.workoutPlan.mesocycleWeekId])
+
+  if (scope === 'thisWeek') {
+    await prisma.plannedExercise.update({ where: { id: pe.id }, data: { plannedSets } })
+  } else {
+    const { mesocycleId, weekNumber } = pe.workoutPlan.mesocycleWeek!
+    const matching = await prisma.plannedExercise.findMany({
+      where: {
+        exerciseId: pe.exerciseId,
+        workoutPlan: {
+          label: pe.workoutPlan.label,
+          mesocycleWeek: { mesocycleId, weekNumber: { gte: weekNumber } },
+        },
+      },
+      select: { id: true, workoutPlan: { select: { mesocycleWeekId: true } } },
+    })
+    for (const m of matching) {
+      if (m.workoutPlan?.mesocycleWeekId) affectedWeekIds.add(m.workoutPlan.mesocycleWeekId)
+    }
+    await prisma.$transaction(
+      matching.map(m => prisma.plannedExercise.update({ where: { id: m.id }, data: { plannedSets } })),
+    )
+  }
+
+  await recomputeVolumePlans(Array.from(affectedWeekIds))
+  res.json({ success: true, scope })
 })
 
 // PUT /api/mesocycles/workout-plan/:planId/reorder — reorder exercises in a workout plan
@@ -459,6 +551,8 @@ router.post('/workout-plan/:planId/exercises', async (req, res) => {
     include: { exercise: true },
   })
 
+  if (plan.mesocycleWeek) await recomputeVolumePlans([plan.mesocycleWeek.id])
+
   res.status(201).json(pe)
 })
 
@@ -493,13 +587,17 @@ router.post('/workout-plan/:planId/exercises/propagate', async (req, res) => {
   })
 
   let count = 0
+  const affectedWeekIds = new Set<number>()
   for (const mp of matchingPlans) {
     const maxSort = mp.plannedExercises[0]?.sortOrder ?? -1
     await prisma.plannedExercise.create({
       data: { workoutPlanId: mp.id, exerciseId, plannedSets, repRange, targetRir, sortOrder: maxSort + 1 },
     })
+    affectedWeekIds.add(mp.mesocycleWeekId)
     count++
   }
+
+  await recomputeVolumePlans(Array.from(affectedWeekIds))
 
   res.json({ added: count })
 })

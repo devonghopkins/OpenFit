@@ -4,7 +4,7 @@ import {
   useMesocycle, useActivateMesocycle, useCompleteMesocycle, useSwapExercise, useSwapExerciseRemaining,
   useReorderExercises, useReorderExercisesRemaining,
   useAddExerciseToPlan, useAddExercisePropagated,
-  useUpdateExerciseNotes, useRemovePlannedExercise,
+  useUpdateExerciseNotes, useRemovePlannedExercise, useUpdatePlannedExerciseSets,
   type PlannedExercise, type Mesocycle, type WorkoutPlan,
 } from '@/hooks/use-mesocycles'
 import { useExercises } from '@/hooks/use-exercises'
@@ -172,6 +172,7 @@ function PlanningView({
   onMoveExercise,
   onEditNotes,
   onRemove,
+  onEditSets,
 }: {
   meso: Mesocycle
   onStartSession: (planId: number) => void
@@ -180,6 +181,7 @@ function PlanningView({
   onMoveExercise: (plan: WorkoutPlan, peIndex: number, direction: 'up' | 'down') => void
   onEditNotes: (pe: PlannedExercise) => void
   onRemove: (pe: PlannedExercise) => void
+  onEditSets: (pe: PlannedExercise) => void
 }) {
   const createSession = useCreateSession()
 
@@ -287,9 +289,13 @@ function PlanningView({
                             <X className="h-3.5 w-3.5" />
                           </button>
                           <span className="truncate text-foreground flex-1">{pe.exercise.name}</span>
-                          <span className="shrink-0 text-xs text-muted-foreground">
+                          <button
+                            onClick={() => onEditSets(pe)}
+                            className="shrink-0 text-xs text-muted-foreground hover:text-foreground transition-colors px-1 rounded hover:bg-muted"
+                            title="Adjust sets"
+                          >
                             {pe.plannedSets}×{pe.repRange} @RIR {pe.targetRir}
-                          </span>
+                          </button>
                         </div>
                         {pe.notes && (
                           <p className="text-[10px] italic text-yellow-500/80 ml-[72px] -mt-0.5">{pe.notes}</p>
@@ -330,6 +336,7 @@ export default function MesocycleDetailPage() {
   const addExercisePropagated = useAddExercisePropagated()
   const updateNotes = useUpdateExerciseNotes()
   const removePlannedExercise = useRemovePlannedExercise()
+  const updatePlannedSets = useUpdatePlannedExerciseSets()
 
   // Swap dialog state
   const [swapTarget, setSwapTarget] = useState<PlannedExercise | null>(null)
@@ -348,6 +355,9 @@ export default function MesocycleDetailPage() {
   const [notesText, setNotesText] = useState('')
   // Remove dialog state
   const [removeTarget, setRemoveTarget] = useState<PlannedExercise | null>(null)
+  // Sets-editor dialog state
+  const [setsTarget, setSetsTarget] = useState<PlannedExercise | null>(null)
+  const [setsDraft, setSetsDraft] = useState<number>(3)
 
   // Fetch exercises for swap dialog
   const primaryMuscle = swapTarget?.exercise.primaryMuscles[0] || ''
@@ -517,8 +527,69 @@ export default function MesocycleDetailPage() {
           onMoveExercise={handleMoveExercise}
           onEditNotes={(pe) => { setNotesTarget(pe); setNotesText(pe.notes || '') }}
           onRemove={(pe) => setRemoveTarget(pe)}
+          onEditSets={(pe) => { setSetsTarget(pe); setSetsDraft(pe.plannedSets) }}
         />
       )}
+
+      {/* Edit Sets Dialog */}
+      <Dialog open={!!setsTarget} onOpenChange={(open) => { if (!open) setSetsTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="text-base">Adjust Sets</DialogTitle>
+            <DialogDescription>
+              <span className="font-medium text-foreground">{setsTarget?.exercise.name}</span>
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-center gap-4 py-4">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSetsDraft(s => Math.max(0, s - 1))}
+              disabled={setsDraft <= 0}
+            >
+              −
+            </Button>
+            <div className="text-3xl font-bold w-12 text-center">{setsDraft}</div>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSetsDraft(s => Math.min(20, s + 1))}
+              disabled={setsDraft >= 20}
+            >
+              +
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (setsTarget) {
+                  updatePlannedSets.mutate(
+                    { plannedExerciseId: setsTarget.id, plannedSets: setsDraft, scope: 'thisWeek' },
+                    { onSuccess: () => setSetsTarget(null) },
+                  )
+                }
+              }}
+              disabled={updatePlannedSets.isPending}
+            >
+              Apply to this week
+            </Button>
+            <Button
+              onClick={() => {
+                if (setsTarget) {
+                  updatePlannedSets.mutate(
+                    { plannedExerciseId: setsTarget.id, plannedSets: setsDraft, scope: 'remaining' },
+                    { onSuccess: () => setSetsTarget(null) },
+                  )
+                }
+              }}
+              disabled={updatePlannedSets.isPending}
+            >
+              Apply to this week + remaining
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Remove Exercise Dialog */}
       <Dialog open={!!removeTarget} onOpenChange={(open) => { if (!open) setRemoveTarget(null) }}>
