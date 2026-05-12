@@ -457,7 +457,7 @@ export default function MesocycleDetailPage() {
             <Play className="mr-1 h-3 w-3" /> Activate
           </Button>
         )}
-        {isActive && (
+        {meso.status !== 'completed' && meso.status !== 'archived' && (
           <Button
             variant="outline"
             size="sm"
