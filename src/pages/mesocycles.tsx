@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useMesocycles, useCreateMesocycle, useGenerateMesocycle, useActivateMesocycle, useDeleteMesocycle } from '@/hooks/use-mesocycles'
+import { useMesocycles, useCreateMesocycle, useGenerateMesocycle, useActivateMesocycle, useDeleteMesocycle, useMesocycleTemplates } from '@/hooks/use-mesocycles'
 import { useMuscleGroups } from '@/hooks/use-muscle-groups'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -15,6 +15,7 @@ export default function MesocyclesPage() {
   const navigate = useNavigate()
   const { data: mesocycles, isLoading } = useMesocycles()
   const { data: muscleGroups } = useMuscleGroups()
+  const { data: templates } = useMesocycleTemplates()
   const createMesocycle = useCreateMesocycle()
   const generateMesocycle = useGenerateMesocycle()
   const activateMesocycle = useActivateMesocycle()
@@ -27,6 +28,7 @@ export default function MesocyclesPage() {
   const [progression, setProgression] = useState('Standard')
   const [focusMuscles, setFocusMuscles] = useState<string[]>([])
   const [seedFromMesocycleId, setSeedFromMesocycleId] = useState<number | null>(null)
+  const [templateId, setTemplateId] = useState<string | null>(null)
 
   const toggleDay = (day: number) => {
     setTrainingDays(prev =>
@@ -42,17 +44,21 @@ export default function MesocyclesPage() {
 
   const handleCreate = async () => {
     try {
+      // If a template is picked, use its training days
+      const tpl = templates?.find(t => t.id === templateId)
+      const effectiveTrainingDays = tpl ? tpl.trainingDays : trainingDays
       const meso = await createMesocycle.mutateAsync({
         name,
         weeks,
-        trainingDays,
+        trainingDays: effectiveTrainingDays,
         progression,
         focusMuscles,
       })
-      await generateMesocycle.mutateAsync({ id: meso.id, seedFromMesocycleId })
+      await generateMesocycle.mutateAsync({ id: meso.id, seedFromMesocycleId, templateId })
       setCreating(false)
       setName('')
       setSeedFromMesocycleId(null)
+      setTemplateId(null)
       navigate(`/mesocycles/${meso.id}`)
     } catch (err) {
       console.error('Mesocycle creation failed:', err)
@@ -156,6 +162,25 @@ export default function MesocyclesPage() {
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g., Hypertrophy Block 1" autoComplete="off" autoCorrect="off" />
             </div>
 
+            <div>
+              <label className="text-sm font-medium">Template</label>
+              <select
+                value={templateId ?? ''}
+                onChange={(e) => setTemplateId(e.target.value ? e.target.value : null)}
+                className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="">None — auto-generate</option>
+                {templates?.map(t => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
+              {templateId && (
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {templates?.find(t => t.id === templateId)?.description}. Training days and exercises are set by the template; week 1 weights seed at ~85% of your prior peak per exercise.
+                </p>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium">Working Weeks</label>
@@ -176,26 +201,29 @@ export default function MesocyclesPage() {
               </div>
             </div>
 
-            <div>
-              <label className="text-sm font-medium">Training Days</label>
-              <div className="mt-1 flex gap-1.5">
-                {DAY_LABELS.map((label, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => toggleDay(i)}
-                    className={`flex-1 rounded-md border py-2 text-xs font-medium transition-colors ${
-                      trainingDays.includes(i)
-                        ? 'border-volume-safe bg-volume-safe/20 text-volume-safe'
-                        : 'border-input text-muted-foreground hover:bg-accent'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
+            {!templateId && (
+              <div>
+                <label className="text-sm font-medium">Training Days</label>
+                <div className="mt-1 flex gap-1.5">
+                  {DAY_LABELS.map((label, i) => (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => toggleDay(i)}
+                      className={`flex-1 rounded-md border py-2 text-xs font-medium transition-colors ${
+                        trainingDays.includes(i)
+                          ? 'border-volume-safe bg-volume-safe/20 text-volume-safe'
+                          : 'border-input text-muted-foreground hover:bg-accent'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
+            {!templateId && (
             <div>
               <label className="text-sm font-medium">Focus Muscles (higher starting volume)</label>
               {!muscleGroups ? (
@@ -219,7 +247,9 @@ export default function MesocyclesPage() {
                 </div>
               )}
             </div>
+            )}
 
+            {!templateId && (
             <div>
               <label className="text-sm font-medium">Seed From Previous Mesocycle</label>
               <select
@@ -236,12 +266,18 @@ export default function MesocyclesPage() {
                 Reuse exercise selection and start at ~90% of last peak weight.
               </p>
             </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" onClick={() => setCreating(false)}>Cancel</Button>
               <Button
                 onClick={handleCreate}
-                disabled={!name || trainingDays.length < 3 || createMesocycle.isPending || generateMesocycle.isPending}
+                disabled={
+                  !name ||
+                  (!templateId && trainingDays.length < 3) ||
+                  createMesocycle.isPending ||
+                  generateMesocycle.isPending
+                }
               >
                 <Zap className="mr-2 h-4 w-4" />
                 {generateMesocycle.isPending ? 'Generating...' : 'Create & Generate'}

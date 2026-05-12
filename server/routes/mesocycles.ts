@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { prisma } from '../db.js'
 import { z } from 'zod/v4'
 import { generateMesocycle } from '../services/mesocycle-generator.js'
+import { MESOCYCLE_TEMPLATES } from '../services/mesocycle-templates.js'
 import type { AuthRequest } from '../middleware/auth.js'
 
 const router = Router()
@@ -70,6 +71,19 @@ const createSchema = z.object({
   goal: z.string().default('Pure Hypertrophy'),
   focusMuscles: z.array(z.string()).default([]),
   progression: z.enum(['Conservative', 'Standard', 'Aggressive']).default('Standard'),
+})
+
+// GET /api/mesocycles/templates — list available mesocycle templates
+router.get('/templates', async (_req, res) => {
+  res.json(
+    MESOCYCLE_TEMPLATES.map(t => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      trainingDays: Array.from(new Set(t.days.map(d => d.dayOfWeek))).sort(),
+      dayCount: t.days.length,
+    })),
+  )
 })
 
 // GET /api/mesocycles
@@ -176,6 +190,10 @@ router.post('/:id/generate', async (req, res) => {
   const focusMuscles = JSON.parse(mesocycle.focusMuscles || '[]')
   const seedFromMesocycleId =
     typeof req.body?.seedFromMesocycleId === 'number' ? req.body.seedFromMesocycleId : null
+  const templateId =
+    typeof req.body?.templateId === 'string' && req.body.templateId.length > 0
+      ? req.body.templateId
+      : null
 
   const result = await generateMesocycle({
     mesocycleId: mesocycle.id,
@@ -185,6 +203,7 @@ router.post('/:id/generate', async (req, res) => {
     progression: mesocycle.progression as 'Conservative' | 'Standard' | 'Aggressive',
     focusMuscles,
     seedFromMesocycleId,
+    templateId,
   })
 
   res.json(result)

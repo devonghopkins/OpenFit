@@ -84,12 +84,35 @@ export function useCreateMesocycle() {
 export function useGenerateMesocycle() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, seedFromMesocycleId }: { id: number; seedFromMesocycleId?: number | null }) =>
+    mutationFn: ({ id, seedFromMesocycleId, templateId }: {
+      id: number
+      seedFromMesocycleId?: number | null
+      templateId?: string | null
+    }) =>
       api<{ weeks: number; message: string }>(`/mesocycles/${id}/generate`, {
         method: 'POST',
-        body: JSON.stringify({ seedFromMesocycleId: seedFromMesocycleId ?? null }),
+        body: JSON.stringify({
+          seedFromMesocycleId: seedFromMesocycleId ?? null,
+          templateId: templateId ?? null,
+        }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['mesocycles'] }),
+  })
+}
+
+export interface MesocycleTemplateSummary {
+  id: string
+  name: string
+  description: string
+  trainingDays: number[]
+  dayCount: number
+}
+
+export function useMesocycleTemplates() {
+  return useQuery({
+    queryKey: ['mesocycle-templates'],
+    queryFn: () => api<MesocycleTemplateSummary[]>('/mesocycles/templates'),
+    staleTime: Infinity,
   })
 }
 

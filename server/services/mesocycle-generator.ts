@@ -1,4 +1,5 @@
 import { prisma } from '../db.js'
+import { getTemplate } from './mesocycle-templates.js'
 
 interface GenerateOptions {
   mesocycleId: number
@@ -8,6 +9,7 @@ interface GenerateOptions {
   progression: 'Conservative' | 'Standard' | 'Aggressive'
   focusMuscles: string[]
   seedFromMesocycleId?: number | null
+  templateId?: string | null
 }
 
 // Per-exercise summary from a previous mesocycle, used to deload-seed a new meso
@@ -32,6 +34,33 @@ async function getPriorMesocycleSeed(
         completed: true,
         workoutPlan: { mesocycleWeek: { mesocycleId: prevMesocycleId } },
       },
+    },
+    select: { exerciseId: true, weight: true, reps: true },
+  })
+  const map = new Map<number, SeedData>()
+  for (const s of sets) {
+    const cur = map.get(s.exerciseId)
+    const score = s.weight * s.reps
+    if (!cur || score > cur.peakWeight * cur.peakReps) {
+      map.set(s.exerciseId, { exerciseId: s.exerciseId, peakWeight: s.weight, peakReps: s.reps })
+    }
+  }
+  return map
+}
+
+// All-time peak per exercise across the user's completed history. Used when
+// generating from a template to seed week 1 with ~85% of prior peak weights.
+async function getAllTimeExercisePeaks(
+  exerciseIds: number[],
+  userId: string,
+): Promise<Map<number, SeedData>> {
+  if (exerciseIds.length === 0) return new Map()
+  const sets = await prisma.loggedSet.findMany({
+    where: {
+      exerciseId: { in: exerciseIds },
+      isWarmup: false,
+      isSkipped: false,
+      session: { userId, completed: true },
     },
     select: { exerciseId: true, weight: true, reps: true },
   })
@@ -125,7 +154,13 @@ interface SelectedSlot {
 }
 
 export async function generateMesocycle(options: GenerateOptions) {
-  const { mesocycleId, userId, trainingDays, weeks, progression, focusMuscles, seedFromMesocycleId } = options
+  const { mesocycleId, userId, trainingDays, weeks, progression, focusMuscles, seedFromMesocycleId, templateId } = options
+
+  // Template path: skip auto-selection, use the template's day/exercise structure.
+  if (templateId) {
+    return generateFromTemplate({ mesocycleId, userId, weeks, progression, templateId })
+  }
+
   const seedMap = seedFromMesocycleId
     ? await getPriorMesocycleSeed(seedFromMesocycleId, userId)
     : null
@@ -400,4 +435,171 @@ export async function generateMesocycle(options: GenerateOptions) {
   })
 
   return { weeks: totalWeeks, message: `Generated ${weeks} working weeks + 1 deload week` }
+}
+
+// ─── Template-driven generation ──────────────────────────────────────
+// Uses a hardcoded template (server/services/mesocycle-templates.ts) to
+// build the mesocycle. Week 1 weights seed from ~85% of the user's all-time
+// peak for each exercise (if any history exists). Subsequent weeks use the
+// per-set overload engine. Sets progression: +1 set per working week scaled
+// by progression increment; deload week halves sets.
+
+interface TemplateGenerateOptions {
+  mesocycleId: number
+  userId: string
+  weeks: number
+  progression: 'Conservative' | 'Standard' | 'Aggressive'
+  templateId: string
+}
+
+async function generateFromTemplate(options: TemplateGenerateOptions) {
+  const { mesocycleId, userId, weeks, progression, templateId } = options
+  const template = getTemplate(templateId)
+  if (!template) {
+    throw new Error(`Template not found: ${templateId}`)
+  }
+
+  // Resolve every exercise name → exerciseId, with alternativeNames fallback.
+  const allNames = new Set<string>()
+  for (const day of template.days) {
+    for (const tex of day.exercises) {
+      allNames.add(tex.exerciseName)
+      for (const alt of tex.alternativeNames ?? []) allNames.add(alt)
+    }
+  }
+  const candidates = await prisma.exercise.findMany({
+    where: { name: { in: Array.from(allNames) } },
+  })
+  const exByName = new Map(candidates.map(e => [e.name, e]))
+
+  // Resolve to actual exerciseId per template entry; skip if no match found.
+  type ResolvedSlot = {
+    dayOfWeek: number
+    label: string
+    muscleGroups: string[]
+    exerciseId: number
+    plannedSets: number
+    repRange: string
+    sortOrder: number
+  }
+  const resolved: ResolvedSlot[] = []
+  for (const day of template.days) {
+    let sortOrder = 0
+    for (const tex of day.exercises) {
+      const names = [tex.exerciseName, ...(tex.alternativeNames ?? [])]
+      const found = names.map(n => exByName.get(n)).find(Boolean)
+      if (!found) continue // template entry can't resolve — drop it
+      resolved.push({
+        dayOfWeek: day.dayOfWeek,
+        label: day.label,
+        muscleGroups: day.muscleGroups,
+        exerciseId: found.id,
+        plannedSets: tex.plannedSets,
+        repRange: tex.repRange,
+        sortOrder: sortOrder++,
+      })
+    }
+  }
+
+  // All-time peaks for week-1 weight seeding (~85% of peak)
+  const exerciseIds = Array.from(new Set(resolved.map(s => s.exerciseId)))
+  const peakMap = await getAllTimeExercisePeaks(exerciseIds, userId)
+  const exerciseById = new Map(candidates.map(e => [e.id, e]))
+
+  // Wipe existing weeks (regenerate)
+  await prisma.mesocycleWeek.deleteMany({ where: { mesocycleId } })
+
+  const increment = getProgressionIncrement(progression)
+  const totalWeeks = weeks + 1 // +1 for deload
+
+  function setsForWeek(baseSets: number, weekNumber: number, isDeload: boolean): number {
+    if (isDeload) return Math.max(Math.round(baseSets * 0.5), 1)
+    if (weekNumber === 1) return baseSets
+    const bump = Math.round((weekNumber - 1) * (increment / 1.5))
+    return baseSets + bump
+  }
+
+  for (let w = 1; w <= totalWeeks; w++) {
+    const isDeload = w === totalWeeks
+    const targetRir = isDeload ? 4 : getRirForWeek(w, weeks)
+
+    // Build volumePlan from resolved slots × scaled sets, attributed to
+    // each exercise's primary muscle.
+    const volumePlan: Record<string, number> = {}
+    for (const slot of resolved) {
+      const ex = exerciseById.get(slot.exerciseId)
+      const muscles: string[] = JSON.parse(ex?.primaryMuscles || '[]')
+      const primary = muscles[0]
+      if (!primary) continue
+      volumePlan[primary] = (volumePlan[primary] || 0) + setsForWeek(slot.plannedSets, w, isDeload)
+    }
+
+    const mesocycleWeek = await prisma.mesocycleWeek.create({
+      data: {
+        mesocycleId,
+        weekNumber: w,
+        isDeload,
+        volumePlan: JSON.stringify(volumePlan),
+      },
+    })
+
+    // Group resolved slots by (dayOfWeek, label) to create WorkoutPlans
+    const planMap = new Map<string, ResolvedSlot[]>()
+    for (const slot of resolved) {
+      const key = `${slot.dayOfWeek}|${slot.label}`
+      const arr = planMap.get(key) ?? []
+      arr.push(slot)
+      planMap.set(key, arr)
+    }
+
+    for (const slots of planMap.values()) {
+      const first = slots[0]
+      const workoutPlan = await prisma.workoutPlan.create({
+        data: {
+          mesocycleWeekId: mesocycleWeek.id,
+          dayOfWeek: first.dayOfWeek,
+          muscleGroups: JSON.stringify(first.muscleGroups),
+          label: first.label,
+        },
+      })
+
+      for (const slot of slots) {
+        const sets = setsForWeek(slot.plannedSets, w, isDeload)
+        let suggestedLoad: number | null = null
+        if (w === 1) {
+          const peak = peakMap.get(slot.exerciseId)
+          if (peak) {
+            const ex = exerciseById.get(slot.exerciseId)
+            // ~85% of peak weight, snapped to equipment increment
+            suggestedLoad = snapWeight(peak.peakWeight * 0.85, ex?.equipment ?? 'Barbell')
+          }
+        }
+        await prisma.plannedExercise.create({
+          data: {
+            workoutPlanId: workoutPlan.id,
+            exerciseId: slot.exerciseId,
+            plannedSets: sets,
+            repRange: slot.repRange,
+            targetRir,
+            sortOrder: slot.sortOrder,
+            suggestedLoad,
+          },
+        })
+      }
+    }
+  }
+
+  // Stamp mesocycle dates
+  const now = new Date()
+  const endDate = new Date(now)
+  endDate.setDate(endDate.getDate() + totalWeeks * 7)
+  await prisma.mesocycle.update({
+    where: { id: mesocycleId },
+    data: { startDate: now, endDate },
+  })
+
+  return {
+    weeks: totalWeeks,
+    message: `Generated from template "${template.name}": ${weeks} working weeks + 1 deload week`,
+  }
 }
