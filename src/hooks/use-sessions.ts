@@ -84,6 +84,7 @@ export function useUpdateSession() {
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['sessions'] })
       qc.invalidateQueries({ queryKey: ['sessions', vars.id] })
+      if (vars.completed !== undefined) qc.invalidateQueries({ queryKey: ['mesocycles'] })
     },
   })
 }

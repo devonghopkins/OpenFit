@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   useSession, useLogSet, useUpdateSession, useDeleteSet,
@@ -16,54 +16,40 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
 import {
-  ArrowLeft, Check, Timer, Trash2, Plus, History, ChevronUp, ChevronDown,
+  ArrowLeft, Check, Trash2, Plus, History, ChevronUp, ChevronDown,
   ArrowLeftRight, Search, Star, MoreVertical, SkipForward, X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-function RestTimer({ defaultSeconds = 120 }: { defaultSeconds?: number }) {
-  const [seconds, setSeconds] = useState(0)
-  const [running, setRunning] = useState(false)
-
-  useEffect(() => {
-    if (!running) return
-    const interval = setInterval(() => {
-      setSeconds(s => {
-        if (s <= 1) {
-          setRunning(false)
-          return 0
-        }
-        return s - 1
-      })
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [running])
-
-  const start = useCallback(() => {
-    setSeconds(defaultSeconds)
-    setRunning(true)
-  }, [defaultSeconds])
-
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-
-  return (
-    <div className="flex items-center gap-2">
-      <Button
-        variant={running ? 'destructive' : 'outline'}
-        className="h-10 min-w-[5.5rem] tabular-nums"
-        onClick={() => running ? setRunning(false) : start()}
-      >
-        <Timer className="mr-1.5 h-4 w-4" />
-        {running ? `${mins}:${secs.toString().padStart(2, '0')}` : 'Rest'}
-      </Button>
-    </div>
-  )
-}
-
 interface SetFormData {
   weight: string
   reps: string
+}
+
+type LoggedForPrefill = { weight: number; reps: number; isWarmup: boolean; isSkipped: boolean }
+
+/**
+ * What to pre-fill next to "+": the next planned set, unless a set already
+ * logged this workout beat it (heavier, or same weight for more reps). Then
+ * repeat that heaviest set so a run of sets at the new load is one tap each.
+ * The planned rows themselves are unchanged.
+ */
+function prefillFor(
+  planned: { suggestedWeight: number; suggestedReps: number } | undefined,
+  logged: LoggedForPrefill[],
+): SetFormData | null {
+  const best = logged
+    .filter(s => !s.isWarmup && !s.isSkipped && s.weight > 0)
+    .reduce<LoggedForPrefill | null>((top, s) =>
+      !top || s.weight > top.weight || (s.weight === top.weight && s.reps > top.reps) ? s : top, null)
+  if (!planned) return best ? { weight: String(best.weight), reps: String(best.reps) } : null
+  const beatPlan = best && (
+    best.weight > planned.suggestedWeight ||
+    (best.weight === planned.suggestedWeight && best.reps > planned.suggestedReps)
+  )
+  return beatPlan
+    ? { weight: String(best.weight), reps: String(best.reps) }
+    : { weight: String(planned.suggestedWeight), reps: String(planned.suggestedReps) }
 }
 
 interface ExerciseEntry {
@@ -435,7 +421,7 @@ export default function SessionLogPage() {
   const deleteSet = useDeleteSet()
   const reorderExercises = useReorderExercises()
   const removePlannedExercise = useRemovePlannedExercise()
-  const [startTime] = useState(Date.now())
+  const [pageOpenedAt] = useState(() => Date.now())
 
   // Fetch prescriptions (auto-calculated weight/reps)
   const workoutPlanId = session?.workoutPlan?.id
@@ -467,29 +453,26 @@ export default function SessionLogPage() {
   const [addingExercise, setAddingExercise] = useState(false)
   // Exercises added to a freeform session that have no sets logged yet
   const [extraExercises, setExtraExercises] = useState<Exercise[]>([])
-  const [scrollToExerciseId, setScrollToExerciseId] = useState<number | null>(null)
+  const scrollToExerciseId = useRef<number | null>(null)
 
   const getForm = (exerciseId: number): SetFormData => {
     if (setForms[exerciseId]) return setForms[exerciseId]
 
-    // Auto-fill from the NEXT set's prescription (based on how many sets already logged)
-    if (!initializedExercises.has(exerciseId)) {
+    // Auto-fill the NEXT set: its prescription, or the heaviest set already done if that's more.
+    // Wait for prescriptions to load so a heavier plan isn't skipped.
+    const prescriptionsReady = !workoutPlanId || prescriptions !== undefined
+    if (!initializedExercises.has(exerciseId) && prescriptionsReady) {
       const rx = prescriptionMap.get(exerciseId)
-      if (rx?.prescriptions && rx.prescriptions.length > 0) {
-        const logged = setsByExercise.get(exerciseId) || []
-        const nextSetIndex = logged.filter(s => !s.isWarmup).length
-        const setRx = rx.prescriptions[nextSetIndex] || rx.prescriptions[rx.prescriptions.length - 1]
-        if (setRx) {
-          const form = {
-            weight: String(setRx.suggestedWeight),
-            reps: String(setRx.suggestedReps),
-          }
-          setTimeout(() => {
-            setSetForms(prev => ({ ...prev, [exerciseId]: form }))
-            setInitializedExercises(prev => new Set(prev).add(exerciseId))
-          }, 0)
-          return form
-        }
+      const logged = setsByExercise.get(exerciseId) || []
+      const nextSetIndex = logged.filter(s => !s.isWarmup).length
+      const setRx = rx?.prescriptions.length ? rx.prescriptions[nextSetIndex] || rx.prescriptions[rx.prescriptions.length - 1] : undefined
+      const form = prefillFor(setRx, logged)
+      if (form) {
+        setTimeout(() => {
+          setSetForms(prev => ({ ...prev, [exerciseId]: form }))
+          setInitializedExercises(prev => new Set(prev).add(exerciseId))
+        }, 0)
+        return form
       }
     }
 
@@ -554,27 +537,40 @@ export default function SessionLogPage() {
       reps: parseInt(form.reps) || 0,
     }, {
       onSuccess: () => {
-        // Advance to next set's prescription
+        // Advance to the next set: its prescription, or the heaviest set done so far if that's more
         const rx = prescriptionMap.get(exerciseId)
         const nextIndex = setNumber // setNumber was 1-based, so this is the next 0-based index
         const nextRx = rx?.prescriptions[nextIndex] || rx?.prescriptions[rx.prescriptions.length - 1]
-        if (nextRx) {
-          setSetForms(prev => ({
-            ...prev,
-            [exerciseId]: {
-              weight: String(nextRx.suggestedWeight),
-              reps: String(nextRx.suggestedReps),
-            },
-          }))
+        const justLogged = { weight: parseFloat(form.weight) || 0, reps: parseInt(form.reps) || 0, isWarmup: false, isSkipped: false }
+        const next = prefillFor(nextRx, [...existingSets, justLogged])
+        if (next) {
+          setSetForms(prev => ({ ...prev, [exerciseId]: next }))
         }
       },
     })
   }
 
-  const handleFinish = () => {
-    const durationMinutes = Math.round((Date.now() - startTime) / 60000)
-    updateSession.mutate({ id: sessionId, completed: true, durationMinutes })
-    navigate('/history')
+  // Duration from logged-set timestamps, so reopening the page later to press
+  // Finish doesn't record 0 minutes (or the hours spent away)
+  const workoutMinutes = () => {
+    const times = ((session?.loggedSets || []) as Array<{ createdAt?: string }>)
+      .map(s => (s.createdAt ? new Date(s.createdAt).getTime() : NaN))
+      .filter(t => !Number.isNaN(t))
+    if (times.length === 0) return Math.round((Date.now() - pageOpenedAt) / 60000)
+    const first = Math.min(...times)
+    const last = Math.max(...times)
+    const end = Math.min(Date.now(), last + 5 * 60_000) // allow for the last set + rest
+    return Math.max(1, Math.round((end - first) / 60000))
+  }
+
+  const handleFinish = async () => {
+    try {
+      // Wait for the save; navigating first hid failures (e.g. weak gym signal)
+      await updateSession.mutateAsync({ id: sessionId, completed: true, durationMinutes: workoutMinutes() })
+      navigate('/history')
+    } catch (err) {
+      alert(`Couldn't finish the workout: ${err instanceof Error ? err.message : 'network error'}. Check your connection and tap Finish again.`)
+    }
   }
 
   const handleFatigue = (score: number) => {
@@ -638,12 +634,14 @@ export default function SessionLogPage() {
     }
   }
 
-  const addedCardPresent = scrollToExerciseId !== null && exerciseOrder.some(e => e.exerciseId === scrollToExerciseId)
+  // After adding an exercise, scroll to its card once the refetch renders it
   useEffect(() => {
-    if (!addedCardPresent || scrollToExerciseId === null) return
-    document.getElementById(`exercise-${scrollToExerciseId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    setScrollToExerciseId(null)
-  }, [addedCardPresent, scrollToExerciseId])
+    const id = scrollToExerciseId.current
+    const el = id !== null ? document.getElementById(`exercise-${id}`) : null
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    scrollToExerciseId.current = null
+  })
 
   if (isLoading) {
     return <div className="py-12 text-center text-muted-foreground">Loading session...</div>
@@ -657,7 +655,7 @@ export default function SessionLogPage() {
 
   return (
     <div className="space-y-4">
-      {/* Sticky so the rest timer stays reachable while scrolling */}
+      {/* Sticky so back and the workout name stay in view while scrolling */}
       <div className="sticky top-0 z-30 -mx-4 -mt-4 flex items-center gap-2 border-b border-border/60 bg-background/95 px-4 py-2 backdrop-blur-lg md:-mx-6 md:-mt-6 md:px-6">
         <Button variant="ghost" size="icon" className="-ml-2 shrink-0" onClick={() => navigate(-1)} aria-label="Back">
           <ArrowLeft className="h-5 w-5" />
@@ -673,7 +671,6 @@ export default function SessionLogPage() {
             )}
           </p>
         </div>
-        <RestTimer />
       </div>
 
       {exerciseOrder.map((entry, idx) => {
@@ -876,8 +873,9 @@ export default function SessionLogPage() {
               </button>
             ))}
           </div>
-          <Button className="h-12 w-full text-base" onClick={handleFinish}>
-            <Check className="mr-2 h-4 w-4" /> Finish Workout
+          <Button className="h-12 w-full text-base" onClick={handleFinish} disabled={updateSession.isPending}>
+            <Check className="mr-2 h-4 w-4" />
+            {updateSession.isPending ? 'Saving…' : session.completed ? 'Update finished workout' : 'Finish Workout'}
           </Button>
         </CardContent>
       </Card>
@@ -898,7 +896,7 @@ export default function SessionLogPage() {
         hasMesocycle={hasMesocycle}
         excludeIds={new Set(exerciseOrder.map(e => e.exerciseId))}
         onAddedLocally={(ex) => setExtraExercises(prev => [...prev, ex])}
-        onAdded={setScrollToExerciseId}
+        onAdded={(id) => { scrollToExerciseId.current = id }}
         onClose={() => setAddingExercise(false)}
       />
 
