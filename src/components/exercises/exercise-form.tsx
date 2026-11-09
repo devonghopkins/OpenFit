@@ -8,22 +8,42 @@ import { EQUIPMENT_TYPES, MOVEMENT_PATTERNS, MUSCLE_GROUPS } from '@/lib/constan
 interface ExerciseFormProps {
   exercise?: Exercise
   onClose: () => void
+  /** Prefill for a new exercise, e.g. what was typed into a search box */
+  initialName?: string
+  initialPT?: boolean
+  onCreated?: (exercise: Exercise) => void
 }
 
-export function ExerciseForm({ exercise, onClose }: ExerciseFormProps) {
+export function ExerciseForm({ exercise, onClose, initialName, initialPT, onCreated }: ExerciseFormProps) {
   const isEditing = !!exercise
+  // Seeded library exercises only accept note changes on the server
+  const lockedFields = isEditing && exercise.isSeeded
 
-  const [name, setName] = useState(exercise?.name ?? '')
+  const [name, setName] = useState(exercise?.name ?? initialName ?? '')
+  const [isPT, setIsPT] = useState(exercise?.isPT ?? initialPT ?? false)
   const [primaryMuscles, setPrimaryMuscles] = useState<string[]>(exercise?.primaryMuscles ?? [])
   const [secondaryMuscles, setSecondaryMuscles] = useState<string[]>(exercise?.secondaryMuscles ?? [])
-  const [equipment, setEquipment] = useState(exercise?.equipment ?? 'Barbell')
-  const [movementPattern, setMovementPattern] = useState(exercise?.movementPattern ?? 'Push')
-  const [defaultRepRange, setDefaultRepRange] = useState(exercise?.defaultRepRange ?? '8-12')
+  const [equipment, setEquipment] = useState(exercise?.equipment ?? (initialPT ? 'Band' : 'Barbell'))
+  const [movementPattern, setMovementPattern] = useState(exercise?.movementPattern ?? (initialPT ? 'Mobility' : 'Push'))
+  const [defaultRepRange, setDefaultRepRange] = useState(exercise?.defaultRepRange ?? (initialPT ? '12-15' : '8-12'))
   const [sfrRating, setSfrRating] = useState(exercise?.sfrRating ?? 3)
   const [notes, setNotes] = useState(exercise?.notes ?? '')
 
   const createExercise = useCreateExercise()
   const updateExercise = useUpdateExercise()
+  const error = (isEditing ? updateExercise.error : createExercise.error) as Error | null
+  const isPending = createExercise.isPending || updateExercise.isPending
+
+  const togglePT = () => {
+    const next = !isPT
+    setIsPT(next)
+    // Sensible PT defaults on a new exercise, without clobbering anything typed
+    if (!isEditing && next) {
+      if (movementPattern === 'Push') setMovementPattern('Mobility')
+      if (equipment === 'Barbell') setEquipment('Band')
+      if (defaultRepRange === '8-12') setDefaultRepRange('12-15')
+    }
+  }
 
   const toggleMuscle = (list: string[], setList: (v: string[]) => void, muscle: string) => {
     setList(list.includes(muscle) ? list.filter((m) => m !== muscle) : [...list, muscle])
@@ -32,7 +52,8 @@ export function ExerciseForm({ exercise, onClose }: ExerciseFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     const data = {
-      name,
+      name: name.trim(),
+      isPT,
       primaryMuscles,
       secondaryMuscles,
       equipment,
@@ -45,7 +66,12 @@ export function ExerciseForm({ exercise, onClose }: ExerciseFormProps) {
     if (isEditing) {
       updateExercise.mutate({ id: exercise.id, ...data }, { onSuccess: onClose })
     } else {
-      createExercise.mutate(data, { onSuccess: onClose })
+      createExercise.mutate(data, {
+        onSuccess: (created) => {
+          onCreated?.(created)
+          onClose()
+        },
+      })
     }
   }
 
@@ -53,11 +79,34 @@ export function ExerciseForm({ exercise, onClose }: ExerciseFormProps) {
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
         <label className="text-sm font-medium">Name</label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} required />
+        <Input value={name} onChange={(e) => setName(e.target.value)} required disabled={lockedFields} />
       </div>
 
+      <button
+        type="button"
+        role="switch"
+        aria-checked={isPT}
+        onClick={togglePT}
+        disabled={lockedFields}
+        className={`flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2.5 text-left transition-colors disabled:opacity-60 ${
+          isPT ? 'border-volume-info bg-volume-info/10' : 'border-input hover:bg-accent'
+        }`}
+      >
+        <span>
+          <span className="block text-sm font-medium">PT / mobility</span>
+          <span className="block text-xs text-muted-foreground">
+            Logged as sets × reps (band or bodyweight). Not counted in muscle volume.
+          </span>
+        </span>
+        <span className={`h-5 w-9 shrink-0 rounded-full p-0.5 transition-colors ${isPT ? 'bg-volume-info' : 'bg-muted'}`}>
+          <span className={`block h-4 w-4 rounded-full bg-background transition-transform ${isPT ? 'translate-x-4' : ''}`} />
+        </span>
+      </button>
+
       <div>
-        <label className="text-sm font-medium">Primary Muscles</label>
+        <label className="text-sm font-medium">
+          Primary Muscles{isPT && <span className="font-normal text-muted-foreground"> (optional)</span>}
+        </label>
         <div className="mt-1 flex flex-wrap gap-1.5">
           {MUSCLE_GROUPS.map((m) => (
             <button
@@ -154,11 +203,17 @@ export function ExerciseForm({ exercise, onClose }: ExerciseFormProps) {
         />
       </div>
 
+      {error && <p className="text-sm text-volume-danger">{error.message}</p>}
+
       <div className="grid grid-cols-2 gap-2 pt-2 sm:flex sm:justify-end">
         <Button type="button" variant="outline" className="h-11 sm:h-10" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="submit" className="h-11 sm:h-10" disabled={!name || primaryMuscles.length === 0}>
+        <Button
+          type="submit"
+          className="h-11 sm:h-10"
+          disabled={isPending || !name.trim() || (!isPT && primaryMuscles.length === 0)}
+        >
           {isEditing ? 'Save' : 'Create'}
         </Button>
       </div>

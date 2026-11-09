@@ -2,13 +2,14 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { NativeSelect } from '@/components/ui/native-select'
 import { EQUIPMENT_TYPES, MUSCLE_GROUPS } from '@/lib/constants'
-import { Search, Star, X } from 'lucide-react'
+import { HeartPulse, Search, Star, X } from 'lucide-react'
 
 interface Filters {
   search: string
   muscle: string
   equipment: string
   favorites: boolean
+  pt: boolean
 }
 
 interface ExerciseFiltersProps {
@@ -19,7 +20,7 @@ interface ExerciseFiltersProps {
 export function ExerciseFilters({ filters, onChange }: ExerciseFiltersProps) {
   const update = (partial: Partial<Filters>) => onChange({ ...filters, ...partial })
 
-  const hasActiveFilters = filters.muscle || filters.equipment || filters.favorites
+  const hasActiveFilters = filters.muscle || filters.equipment || filters.favorites || filters.pt
 
   return (
     <div className="space-y-3">
@@ -62,10 +63,17 @@ export function ExerciseFilters({ filters, onChange }: ExerciseFiltersProps) {
           <Star className="mr-1.5 h-4 w-4" />
           Favorites
         </Button>
+        <Button
+          variant={filters.pt ? 'default' : 'outline'}
+          onClick={() => update({ pt: !filters.pt })}
+        >
+          <HeartPulse className="mr-1.5 h-4 w-4" />
+          PT / mobility
+        </Button>
         {hasActiveFilters && (
           <Button
             variant="ghost"
-            onClick={() => onChange({ search: filters.search, muscle: '', equipment: '', favorites: false })}
+            onClick={() => onChange({ search: filters.search, muscle: '', equipment: '', favorites: false, pt: false })}
           >
             <X className="mr-1.5 h-4 w-4" />
             Clear

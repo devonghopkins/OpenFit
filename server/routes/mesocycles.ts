@@ -35,6 +35,7 @@ function deserializeWorkoutPlan(row: Record<string, unknown>) {
 
 // Recompute volumePlan for the given MesocycleWeek IDs based on current
 // PlannedExercises × plannedSets, attributed to each exercise's primary muscles.
+// PT / mobility exercises don't count toward hypertrophy volume.
 async function recomputeVolumePlans(mesocycleWeekIds: number[]) {
   for (const mesocycleWeekId of mesocycleWeekIds) {
     const week = await prisma.mesocycleWeek.findUnique({
@@ -51,6 +52,7 @@ async function recomputeVolumePlans(mesocycleWeekIds: number[]) {
     const volumePlan: Record<string, number> = {}
     for (const wp of week.workoutPlans) {
       for (const pe of wp.plannedExercises) {
+        if (pe.exercise.isPT) continue
         const muscles: string[] = JSON.parse(pe.exercise.primaryMuscles || '[]')
         const primary = muscles[0]
         if (!primary) continue

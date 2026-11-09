@@ -39,7 +39,7 @@ const fail = (err: unknown) => ({
 
 interface PlannedExercise {
   id: number; exerciseId: number; plannedSets: number; repRange: string; targetRir: number
-  notes: string | null; exercise: { name: string; equipment: string; primaryMuscles: string[] }
+  notes: string | null; exercise: { name: string; equipment: string; primaryMuscles: string[]; isPT?: boolean }
 }
 interface WorkoutPlan {
   id: number; dayOfWeek: number; label: string | null; muscleGroups: string[]
@@ -52,7 +52,7 @@ interface Mesocycle {
 }
 interface LoggedSet {
   exerciseId: number; setNumber: number; weight: number; reps: number; rirAchieved: number | null
-  isWarmup: boolean; isSkipped: boolean; exercise: { name: string }
+  isWarmup: boolean; isSkipped: boolean; notes: string | null; exercise: { name: string; isPT?: boolean }
 }
 interface Session {
   id: number; date: string; completed: boolean; durationMinutes: number | null; fatigueScore: number | null
@@ -65,6 +65,23 @@ interface MuscleGroup {
 interface Exercise {
   id: number; name: string; equipment: string; movementPattern: string; primaryMuscles: string[]
   secondaryMuscles: string[]; defaultRepRange: string; sfrRating: number; isFavorite: boolean; isExcluded: boolean; notes: string | null
+  isPT: boolean; isSeeded: boolean
+}
+
+const EQUIPMENT = ['Barbell', 'Dumbbell', 'Cable', 'Machine', 'Bodyweight', 'Band', 'Smith Machine'] as const
+const MUSCLES = [
+  'Chest', 'Back', 'Front Delts', 'Side Delts', 'Rear Delts', 'Biceps', 'Triceps', 'Forearms',
+  'Quads', 'Hamstrings', 'Glutes', 'Calves', 'Abs', 'Traps',
+] as const
+
+/** How a set reads: "185×8", PT "red band×15" / "BW×12" */
+function formatSet(set: LoggedSet) {
+  if (set.isSkipped) return 'skipped'
+  if (set.exercise.isPT) {
+    const load = set.notes || (set.weight > 0 ? String(set.weight) : 'BW')
+    return `${load}×${set.reps}`
+  }
+  return `${set.weight}×${set.reps}${set.rirAchieved != null ? ` @RIR${set.rirAchieved}` : ''}`
 }
 
 function planStatus(plan: WorkoutPlan) {
@@ -96,7 +113,8 @@ function summarizeProgram(meso: Mesocycle, onlyWeek?: number) {
           plannedExerciseId: pe.id,
           exerciseId: pe.exerciseId,
           name: pe.exercise.name,
-          plan: `${pe.plannedSets}×${pe.repRange} @RIR${pe.targetRir}`,
+          plan: pe.exercise.isPT ? `${pe.plannedSets}×${pe.repRange}` : `${pe.plannedSets}×${pe.repRange} @RIR${pe.targetRir}`,
+          ...(pe.exercise.isPT ? { pt: true } : {}),
           ...(pe.notes ? { note: pe.notes } : {}),
         })),
       })),
@@ -110,7 +128,7 @@ function summarizeSession(s: Session) {
   for (const set of [...s.loggedSets].sort((a, b) => a.setNumber - b.setNumber)) {
     if (set.isWarmup) continue
     const list = byExercise.get(set.exercise.name) || []
-    list.push(set.isSkipped ? 'skipped' : `${set.weight}×${set.reps}${set.rirAchieved != null ? ` @RIR${set.rirAchieved}` : ''}`)
+    list.push(formatSet(set))
     byExercise.set(set.exercise.name, list)
   }
   return {
@@ -141,6 +159,8 @@ function buildServer(caller: McpCaller) {
         "OpenFit is the user's hypertrophy training app: mesocycle programs (blocks of weeks ending in a deload), " +
         'workouts per training day, and logged sets. Start with get_training_overview. Weights are in pounds. ' +
         'Volume landmarks per muscle: MEV (minimum effective), MAV (maximum adaptive), MRV (maximum recoverable) weekly sets. ' +
+        'Exercises marked pt are physical-therapy / mobility work: logged as sets × reps (band color or bodyweight), ' +
+        'kept at a fixed set count, and never counted in per-muscle volume. ' +
         'Before changing the program, explain the change and why; make changes only when the user asks or agrees.',
     },
   )
@@ -266,19 +286,23 @@ function buildServer(caller: McpCaller) {
 
   server.registerTool('find_exercises', {
     title: 'Find exercises',
-    description: "Search the user's exercise library (for swaps or additions). Returns exerciseId, equipment, muscles, stimulus-to-fatigue rating (SFR 1–5), favorites.",
+    description:
+      "Search the user's exercise library (for swaps or additions). Returns exerciseId, equipment, muscles, stimulus-to-fatigue rating (SFR 1–5), " +
+      'favorites, and pt for physical-therapy / mobility moves. If nothing fits, create it with create_exercise.',
     inputSchema: z.object({
-      muscle: z.string().optional().describe('Primary muscle, e.g. "Side Delts", "Quads"'),
-      equipment: z.string().optional().describe('e.g. Barbell, Dumbbell, Cable, Machine, Bodyweight'),
-      search: z.string().optional().describe('Part of the exercise name'),
+      muscle: z.string().optional().describe('Primary or secondary muscle, e.g. "Side Delts", "Quads"'),
+      equipment: z.string().optional().describe('e.g. Barbell, Dumbbell, Cable, Machine, Bodyweight, Band'),
+      search: z.string().optional().describe('Part of the exercise name, any case, e.g. "curl", "leg press"'),
+      pt: z.boolean().optional().describe('true = only PT / mobility exercises; false = only training exercises; omit for both'),
     }),
     annotations: annotationsRead,
-  }, async ({ muscle, equipment, search }) => {
+  }, async ({ muscle, equipment, search, pt }) => {
     try {
       const q = new URLSearchParams()
       if (muscle) q.set('muscle', muscle)
       if (equipment) q.set('equipment', equipment)
       if (search) q.set('search', search)
+      if (pt !== undefined) q.set('pt', String(pt))
       const list = await api<Exercise[]>(`/exercises?${q}`)
       return json(list
         .filter(e => !e.isExcluded)
@@ -287,6 +311,7 @@ function buildServer(caller: McpCaller) {
         .map(e => ({
           exerciseId: e.id, name: e.name, equipment: e.equipment, primary: e.primaryMuscles, secondary: e.secondaryMuscles,
           reps: e.defaultRepRange, sfr: e.sfrRating, ...(e.isFavorite ? { favorite: true } : {}),
+          ...(e.isPT ? { pt: true } : {}), ...(!e.isSeeded ? { custom: true } : {}),
         })))
     } catch (err) { return fail(err) }
   })
@@ -309,6 +334,44 @@ function buildServer(caller: McpCaller) {
       if (!Object.keys(body).length) return fail('Nothing to save')
       await api('/settings', { method: 'PUT', body })
       return json({ saved: Object.keys(body) })
+    } catch (err) { return fail(err) }
+  })
+
+  server.registerTool('create_exercise', {
+    title: 'Create an exercise',
+    description:
+      "Add a custom exercise to the user's library when find_exercises has nothing suitable, e.g. a PT move like " +
+      '"Band External Rotation". Then add it to workouts with add_exercise. Check find_exercises first: names must be unique. ' +
+      'Set pt: true for physical-therapy / mobility work so it stays out of hypertrophy volume and is never auto-progressed.',
+    inputSchema: z.object({
+      name: z.string().min(2).max(80),
+      equipment: z.enum(EQUIPMENT).default('Bodyweight'),
+      muscle: z.enum(MUSCLES).optional().describe('Main muscle worked; optional for PT moves'),
+      secondary_muscles: z.array(z.enum(MUSCLES)).max(4).default([]),
+      pt: z.boolean().default(false).describe('Physical-therapy / mobility exercise'),
+      rep_range: z.string().regex(/^\d{1,2}-\d{1,2}$/).optional().describe('Usual reps, e.g. "12-15"; default 12-15 for PT, 8-12 otherwise'),
+      notes: z.string().max(300).optional().describe('Cues shown with the exercise, e.g. "Elbow pinned to side, slow on the way back"'),
+    }),
+    annotations: annotationsWrite,
+  }, async ({ name, equipment, muscle, secondary_muscles, pt, rep_range, notes }) => {
+    try {
+      const created = await api<Exercise>('/exercises', {
+        method: 'POST',
+        body: {
+          name,
+          equipment,
+          primaryMuscles: muscle ? [muscle] : [],
+          secondaryMuscles: secondary_muscles,
+          movementPattern: pt ? 'Mobility' : 'Isolation',
+          defaultRepRange: rep_range ?? (pt ? '12-15' : '8-12'),
+          isPT: pt,
+          ...(notes ? { notes } : {}),
+        },
+      })
+      return json({
+        created: true, exerciseId: created.id, name: created.name, equipment: created.equipment,
+        primary: created.primaryMuscles, reps: created.defaultRepRange, ...(created.isPT ? { pt: true } : {}),
+      })
     } catch (err) { return fail(err) }
   })
 

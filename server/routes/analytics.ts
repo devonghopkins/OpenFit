@@ -54,10 +54,12 @@ router.get('/summary', async (req, res) => {
   // Total exercises (global — no userId on Exercise)
   const totalExercises = await prisma.exercise.count()
 
-  // Weekly volume per muscle (this week's logged sets)
+  // Weekly volume per muscle (this week's completed working sets, PT excluded)
   const thisWeekSets = await prisma.loggedSet.findMany({
     where: {
       isWarmup: false,
+      isSkipped: false,
+      exercise: { isPT: false },
       session: { userId, date: { gte: weekStart } },
     },
     include: { exercise: true },

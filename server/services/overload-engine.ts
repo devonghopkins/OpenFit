@@ -8,6 +8,8 @@ export interface SetPrescription {
   lastReps: number
   e1rm: number
   reason: string
+  /** PT sets: band color or other load note from last time, e.g. "red band" */
+  suggestedNote?: string
 }
 
 export interface ExercisePrescription {
@@ -116,6 +118,7 @@ interface LastSetData {
   weight: number
   reps: number
   rirAchieved: number | null
+  notes: string | null
 }
 
 interface LastSessionResult {
@@ -133,10 +136,10 @@ async function getLastSessionSets(
   } as const
 
   const mapSets = (rows: Array<{
-    setNumber: number; weight: number; reps: number; rirAchieved: number | null
+    setNumber: number; weight: number; reps: number; rirAchieved: number | null; notes: string | null
   }>): LastSetData[] =>
     rows.sort((a, b) => a.setNumber - b.setNumber).map(s => ({
-      setNumber: s.setNumber, weight: s.weight, reps: s.reps, rirAchieved: s.rirAchieved,
+      setNumber: s.setNumber, weight: s.weight, reps: s.reps, rirAchieved: s.rirAchieved, notes: s.notes,
     }))
 
   // Try label-matched history first (same day slot from previous week)
@@ -211,6 +214,26 @@ async function getMultiSetPrescription(
   const [minReps, maxReps] = repRange.split('-').map(Number)
   const repFloor = minReps || 8
   const repCeil = maxReps || 12
+
+  // PT / mobility: no overload. Repeat last time's band/weight and reps, else the top of the rep range.
+  if (exercise?.isPT) {
+    const count = Math.max(plannedSets, lastSets.length)
+    const prescriptions: SetPrescription[] = []
+    for (let i = 0; i < count; i++) {
+      const last = lastSets[i] ?? lastSets[lastSets.length - 1]
+      prescriptions.push({
+        setNumber: i + 1,
+        suggestedWeight: last?.weight ?? 0,
+        suggestedReps: last?.reps || repCeil,
+        lastWeight: last?.weight ?? 0,
+        lastReps: last?.reps ?? 0,
+        e1rm: 0,
+        reason: last ? 'Same as last time' : 'Prescribed reps',
+        ...(last?.notes ? { suggestedNote: last.notes } : {}),
+      })
+    }
+    return { prescriptions, adjustedPlannedSets: count }
+  }
 
   // Cross-mesocycle when prior session was in a different mesocycle (or none)
   const crossMesocycle =
@@ -386,7 +409,8 @@ export async function getWeeklyVolumeAnalytics(
       ...(toDate && { lte: toDate }),
     }
   }
-  const where: Record<string, unknown> = { isWarmup: false }
+  // Completed working sets only; PT / mobility work isn't hypertrophy volume
+  const where: Record<string, unknown> = { isWarmup: false, isSkipped: false, exercise: { isPT: false } }
   if (Object.keys(sessionFilter).length > 0) {
     where.session = sessionFilter
   }

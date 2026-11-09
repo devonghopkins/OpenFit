@@ -14,6 +14,7 @@ export interface PlannedExercise {
     id: number
     name: string
     primaryMuscles: string[]
+    isPT?: boolean
     secondaryMuscles: string[]
     equipment: string
     defaultRepRange: string

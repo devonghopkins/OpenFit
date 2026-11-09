@@ -23,12 +23,18 @@ model Exercise {
   notes            String?
   substitutions    String   @default("[]")   // JSON array
   isSeeded         Boolean  @default(true)
+  // PT / mobility work: loggable like any exercise but left out of hypertrophy volume
+  isPT             Boolean  @default(false)
+  // Owner of a custom exercise; null for the shared seeded library
+  createdBy        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   userOverrides    UserExerciseOverride[]
   plannedExercises PlannedExercise[]
   loggedSets       LoggedSet[]
+
+  @@index([createdBy])
 }
 
 // ─── Per-user exercise preferences (favorites, excluded) ─────────────────────

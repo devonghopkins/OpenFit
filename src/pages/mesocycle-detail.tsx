@@ -241,7 +241,10 @@ function PlanningView({
                         className="flex w-full items-center gap-2 rounded-lg px-2 py-2.5 text-left transition-colors hover:bg-muted active:bg-muted"
                       >
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm leading-snug">{pe.exercise.name}</p>
+                          <p className="text-sm leading-snug">
+                            {pe.exercise.name}
+                            {pe.exercise.isPT && <span className="ml-1.5 rounded bg-volume-info/20 px-1 py-px text-[10px] font-medium text-volume-info">PT</span>}
+                          </p>
                           {pe.notes && (
                             <p className="mt-0.5 flex items-start gap-1 text-xs italic text-yellow-500/80">
                               <StickyNote className="mt-0.5 h-3 w-3 shrink-0" />{pe.notes}
@@ -249,7 +252,7 @@ function PlanningView({
                           )}
                         </div>
                         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {pe.plannedSets}×{pe.repRange} · RIR {pe.targetRir}
+                          {pe.plannedSets}×{pe.repRange}{!pe.exercise.isPT && <> · RIR {pe.targetRir}</>}
                         </span>
                         <MoreHorizontal className="h-4 w-4 shrink-0 text-muted-foreground" />
                       </button>

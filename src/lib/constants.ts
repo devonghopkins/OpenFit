@@ -16,6 +16,7 @@ export const MOVEMENT_PATTERNS = [
   'Isolation',
   'Carry',
   'Compound',
+  'Mobility',
 ] as const
 
 export const PRIORITY_TIERS = ['High', 'Medium', 'Low'] as const

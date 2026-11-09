@@ -18,6 +18,7 @@ export interface LoggedSet {
     name: string
     primaryMuscles: string[]
     equipment: string
+    isPT?: boolean
   }
 }
 
@@ -42,7 +43,7 @@ export interface Session {
       targetRir: number
       suggestedLoad: number | null
       sortOrder: number
-      exercise: { id: number; name: string; primaryMuscles: string[]; secondaryMuscles: string[]; equipment: string }
+      exercise: { id: number; name: string; primaryMuscles: string[]; secondaryMuscles: string[]; equipment: string; isPT?: boolean }
     }>
     mesocycleWeek?: {
       weekNumber: number
@@ -129,6 +130,8 @@ export interface SetPrescription {
   lastReps: number
   e1rm: number
   reason: string
+  /** PT sets: band color or load note from last time */
+  suggestedNote?: string
 }
 
 export interface ExercisePrescription {

@@ -151,6 +151,7 @@ interface SelectedSlot {
   defaultRepRange: string
   baseSets: number // sets at week 1
   sortOrder: number
+  isPT?: boolean // PT / mobility: fixed sets, no volume, no progression
 }
 
 export async function generateMesocycle(options: GenerateOptions) {
@@ -199,7 +200,10 @@ export async function generateMesocycle(options: GenerateOptions) {
 
   // Pre-fetch all exercises and user overrides once
   const [allExercises, userOverrides] = await Promise.all([
-    prisma.exercise.findMany({ orderBy: [{ sfrRating: 'desc' }] }),
+    prisma.exercise.findMany({
+      where: { OR: [{ createdBy: null }, { createdBy: userId }] },
+      orderBy: [{ sfrRating: 'desc' }],
+    }),
     prisma.userExerciseOverride.findMany({ where: { userId } }),
   ])
   const overrideMap = new Map(userOverrides.map(o => [o.exerciseId, o]))
@@ -268,6 +272,7 @@ export async function generateMesocycle(options: GenerateOptions) {
           defaultRepRange: ex?.defaultRepRange ?? pe.repRange,
           baseSets: pe.plannedSets,
           sortOrder: pe.sortOrder,
+          isPT: ex?.isPT ?? false,
         })
         weekUsedExercises.add(pe.exerciseId)
       }
@@ -281,8 +286,9 @@ export async function generateMesocycle(options: GenerateOptions) {
       const muscleSessionCount = splitMuscles.filter(sm => sm.includes(muscleName)).length
       const setsThisSession = Math.max(Math.round(baseVolume / Math.max(muscleSessionCount, 1)), 1)
 
-      // Candidates: exercises targeting this muscle, not user-excluded
+      // Candidates: exercises targeting this muscle, not user-excluded, not PT
       const candidates = allExercises.filter(e => {
+        if (e.isPT) return false
         const muscles: string[] = JSON.parse(e.primaryMuscles || '[]')
         if (!muscles.includes(muscleName)) return false
         const override = overrideMap.get(e.id)
@@ -355,6 +361,7 @@ export async function generateMesocycle(options: GenerateOptions) {
     // Compute volumePlan for the week (informational; reflects actual planned sets)
     const volumePlan: Record<string, number> = {}
     for (const slot of slots) {
+      if (slot.isPT || !slot.muscleName) continue
       const sets = setsForWeek(slot.baseSets, w, isDeload)
       const mg = muscleMap.get(slot.muscleName)
       // Cap at MRV per muscle
@@ -381,7 +388,7 @@ export async function generateMesocycle(options: GenerateOptions) {
         entry = { dayOfWeek: slot.dayOfWeek, label: slot.workoutPlanLabel, muscles: new Set(), slots: [] }
         planMap.set(key, entry)
       }
-      entry.muscles.add(slot.muscleName)
+      if (!slot.isPT && slot.muscleName) entry.muscles.add(slot.muscleName)
       entry.slots.push(slot)
     }
 
@@ -396,7 +403,8 @@ export async function generateMesocycle(options: GenerateOptions) {
       })
 
       for (const slot of entry.slots) {
-        const sets = setsForWeek(slot.baseSets, w, isDeload)
+        // PT keeps its prescribed set count every week, deload included
+        const sets = slot.isPT ? slot.baseSets : setsForWeek(slot.baseSets, w, isDeload)
         // Seed: week-1 starting weight = ~90% of prior peak (deload), else null
         let suggestedLoad: number | null = null
         if (seedMap && w === 1) {
@@ -528,6 +536,7 @@ async function generateFromTemplate(options: TemplateGenerateOptions) {
     const volumePlan: Record<string, number> = {}
     for (const slot of resolved) {
       const ex = exerciseById.get(slot.exerciseId)
+      if (ex?.isPT) continue
       const muscles: string[] = JSON.parse(ex?.primaryMuscles || '[]')
       const primary = muscles[0]
       if (!primary) continue
@@ -564,7 +573,9 @@ async function generateFromTemplate(options: TemplateGenerateOptions) {
       })
 
       for (const slot of slots) {
-        const sets = setsForWeek(slot.plannedSets, w, isDeload)
+        const sets = exerciseById.get(slot.exerciseId)?.isPT
+          ? slot.plannedSets
+          : setsForWeek(slot.plannedSets, w, isDeload)
         let suggestedLoad: number | null = null
         if (w === 1) {
           const peak = peakMap.get(slot.exerciseId)

@@ -20,7 +20,10 @@ export function ExerciseCard({ exercise, onEdit, onToggleFavorite }: ExerciseCar
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <h3 className="font-medium text-[15px] leading-snug">{exercise.name}</h3>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h3 className="font-medium text-[15px] leading-snug">{exercise.name}</h3>
+              {exercise.isPT && <Badge variant="info" className="text-[10px] px-1.5 py-0">PT</Badge>}
+            </div>
             <p className="text-xs text-muted-foreground mt-0.5">
               {exercise.equipment} &middot; {exercise.movementPattern}
             </p>
@@ -68,7 +71,8 @@ export function ExerciseCard({ exercise, onEdit, onToggleFavorite }: ExerciseCar
 
         <div className="mt-2 flex items-center gap-3 text-[11px] text-muted-foreground">
           <span>Reps: {exercise.defaultRepRange}</span>
-          <span>SFR: {exercise.sfrRating}/5</span>
+          {!exercise.isPT && <span>SFR: {exercise.sfrRating}/5</span>}
+          {!exercise.isSeeded && <span>Custom</span>}
           {exercise.isExcluded && (
             <Badge variant="danger" className="text-[10px] px-1.5 py-0">
               Excluded

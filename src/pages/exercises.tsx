@@ -14,6 +14,7 @@ export default function ExercisesPage() {
     muscle: '',
     equipment: '',
     favorites: false,
+    pt: false,
   })
   const [editingExercise, setEditingExercise] = useState<Exercise | null>(null)
   const [creating, setCreating] = useState(false)
@@ -23,6 +24,7 @@ export default function ExercisesPage() {
     muscle: filters.muscle || undefined,
     equipment: filters.equipment || undefined,
     favorites: filters.favorites || undefined,
+    pt: filters.pt || undefined,
   })
 
   const updateExercise = useUpdateExercise()

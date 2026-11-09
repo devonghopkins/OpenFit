@@ -15,6 +15,9 @@ export interface Exercise {
   isFavorite: boolean
   isExcluded: boolean
   substitutions: string[]
+  /** PT / mobility: logged as sets × reps, not counted in muscle volume */
+  isPT: boolean
+  isSeeded: boolean
 }
 
 interface ExerciseFilters {
@@ -23,6 +26,7 @@ interface ExerciseFilters {
   equipment?: string
   movement?: string
   favorites?: boolean
+  pt?: boolean
 }
 
 function buildQuery(filters: ExerciseFilters): string {
@@ -32,6 +36,7 @@ function buildQuery(filters: ExerciseFilters): string {
   if (filters.equipment) params.set('equipment', filters.equipment)
   if (filters.movement) params.set('movement', filters.movement)
   if (filters.favorites) params.set('favorites', 'true')
+  if (filters.pt !== undefined) params.set('pt', String(filters.pt))
   const q = params.toString()
   return q ? `?${q}` : ''
 }

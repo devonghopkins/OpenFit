@@ -7,6 +7,7 @@ import {
 } from '@/hooks/use-sessions'
 import { useSwapExercise, useSwapExerciseRemaining, useReorderExercises, useRemovePlannedExercise, useAddExerciseToPlan, useAddExercisePropagated } from '@/hooks/use-mesocycles'
 import { useExercises, type Exercise } from '@/hooks/use-exercises'
+import { ExerciseForm } from '@/components/exercises/exercise-form'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -52,10 +53,42 @@ function prefillFor(
     : { weight: String(planned.suggestedWeight), reps: String(planned.suggestedReps) }
 }
 
+type PlannedForPrefill = { suggestedWeight: number; suggestedReps: number; suggestedNote?: string }
+type LoggedWithNote = LoggedForPrefill & { notes?: string | null }
+
+/** PT load as typed: a band color / "BW", or pounds */
+function ptLoad(weight: number, notes?: string | null) {
+  return notes || (weight > 0 ? String(weight) : '')
+}
+
+/** PT pre-fill: repeat the last set done today, else the planned set. Load may be blank (bodyweight). */
+function ptPrefillFor(planned: PlannedForPrefill | undefined, logged: LoggedWithNote[]): SetFormData | null {
+  const last = [...logged].reverse().find(s => !s.isWarmup && !s.isSkipped)
+  if (last) return { weight: ptLoad(last.weight, last.notes), reps: String(last.reps) }
+  if (planned) return { weight: ptLoad(planned.suggestedWeight, planned.suggestedNote), reps: String(planned.suggestedReps) }
+  return null
+}
+
+/** "185 lb × 8"; PT: "red band × 15", "10 lb × 12", "BW × 12" */
+function formatSet(isPT: boolean | undefined, weight: number, reps: number, notes?: string | null) {
+  if (!isPT) return `${weight} lb × ${reps}`
+  if (notes) return `${notes} × ${reps}`
+  return `${weight > 0 ? `${weight} lb` : 'BW'} × ${reps}`
+}
+
+/** Split a typed PT load into a number (pounds) or a note like "red band" */
+function parsePtLoad(load: string): { weight: number; notes?: string } {
+  const text = load.trim()
+  if (!text) return { weight: 0 }
+  const n = Number(text.replace(/\s*(lb|lbs)$/i, ''))
+  return Number.isFinite(n) && n >= 0 ? { weight: n } : { weight: 0, notes: text }
+}
+
 interface ExerciseEntry {
   exerciseId: number
   exerciseName: string
   equipment: string
+  isPT?: boolean
   primaryMuscles: string[]
   plannedSets?: number
   repRange?: string
@@ -69,22 +102,24 @@ interface ExerciseEntry {
 function ExerciseHistoryDialog({
   exerciseId,
   exerciseName,
+  isPT,
   open,
   onClose,
 }: {
   exerciseId: number
   exerciseName: string
+  isPT?: boolean
   open: boolean
   onClose: () => void
 }) {
   const { data: history, isLoading } = useExerciseHistory(open ? exerciseId : 0)
 
-  const grouped = new Map<string, Array<{ setNumber: number; weight: number; reps: number; rirAchieved: number | null }>>()
+  const grouped = new Map<string, Array<{ setNumber: number; weight: number; reps: number; rirAchieved: number | null; notes: string | null }>>()
   if (history) {
     for (const set of history) {
       const dateKey = new Date(set.session.date).toLocaleDateString()
       const existing = grouped.get(dateKey) || []
-      existing.push({ setNumber: set.setNumber, weight: set.weight, reps: set.reps, rirAchieved: set.rirAchieved })
+      existing.push({ setNumber: set.setNumber, weight: set.weight, reps: set.reps, rirAchieved: set.rirAchieved, notes: set.notes })
       grouped.set(dateKey, existing)
     }
   }
@@ -108,7 +143,7 @@ function ExerciseHistoryDialog({
                 {sets.sort((a, b) => a.setNumber - b.setNumber).map((s, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm px-2 py-1 rounded bg-muted">
                     <span className="w-5 text-center text-xs text-muted-foreground">{s.setNumber}</span>
-                    <span className="flex-1">{s.weight} lb × {s.reps}</span>
+                    <span className="flex-1">{formatSet(isPT, s.weight, s.reps, s.notes)}</span>
                     {s.rirAchieved !== null && (
                       <Badge variant="secondary" className="text-[10px]">RIR {s.rirAchieved}</Badge>
                     )}
@@ -263,6 +298,7 @@ function AddExerciseDialog({
 }) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Exercise | null>(null)
+  const [creating, setCreating] = useState(false)
   const { data: allExercises } = useExercises({})
   const addToPlan = useAddExerciseToPlan()
   const addPropagated = useAddExercisePropagated()
@@ -279,6 +315,7 @@ function AddExerciseDialog({
   const handleClose = () => {
     setSearch('')
     setSelected(null)
+    setCreating(false)
     onClose()
   }
 
@@ -302,15 +339,23 @@ function AddExerciseDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose() }}>
-      <DialogContent className={cn(!selected && 'h-[92dvh] sm:h-[80vh]')}>
+      <DialogContent className={cn(!selected && !creating && 'h-[92dvh] sm:h-[80vh]', creating && 'max-h-[92dvh] overflow-y-auto')}>
         <DialogHeader>
-          <DialogTitle className="text-base">Add Exercise</DialogTitle>
+          <DialogTitle className="text-base">{creating ? 'New Exercise' : 'Add Exercise'}</DialogTitle>
           <DialogDescription>
-            {selected ? <>Add <span className="font-medium text-foreground">{selected.name}</span> to…</> : 'Add an exercise you did today'}
+            {creating
+              ? 'Create a custom exercise, then add it here'
+              : selected ? <>Add <span className="font-medium text-foreground">{selected.name}</span> to…</> : 'Add an exercise you did today'}
           </DialogDescription>
         </DialogHeader>
 
-        {selected ? (
+        {creating ? (
+          <ExerciseForm
+            initialName={search.trim()}
+            onCreated={(ex) => { setCreating(false); pick(ex) }}
+            onClose={() => setCreating(false)}
+          />
+        ) : selected ? (
           <div className="space-y-2">
             <Button className="h-12 w-full" onClick={() => add(selected, false)} disabled={isPending}>
               Just this workout
@@ -347,6 +392,7 @@ function AddExerciseDialog({
                     <div className="flex items-center gap-1.5">
                       {ex.isFavorite && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 shrink-0" />}
                       <span className="text-sm font-medium truncate">{ex.name}</span>
+                      {ex.isPT && <Badge variant="info" className="text-[10px] px-1.5 py-0 shrink-0">PT</Badge>}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-[11px] text-muted-foreground">{ex.equipment}</span>
@@ -359,6 +405,15 @@ function AddExerciseDialog({
               {filtered?.length === 0 && (
                 <p className="text-center text-sm text-muted-foreground py-6">No matching exercises found</p>
               )}
+              <button
+                type="button"
+                onClick={() => setCreating(true)}
+                disabled={isPending}
+                className="mt-1 flex w-full items-center gap-3 rounded-lg border border-dashed border-muted-foreground/30 px-2 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted active:bg-muted"
+              >
+                <Plus className="h-4 w-4 shrink-0" />
+                {search.trim() ? <>Create “{search.trim()}”</> : 'Create a new exercise'}
+              </button>
             </div>
           </>
         )}
@@ -443,7 +498,7 @@ export default function SessionLogPage() {
   const [initializedExercises, setInitializedExercises] = useState<Set<number>>(new Set())
 
   // Dialog state
-  const [historyTarget, setHistoryTarget] = useState<{ exerciseId: number; exerciseName: string } | null>(null)
+  const [historyTarget, setHistoryTarget] = useState<{ exerciseId: number; exerciseName: string; isPT?: boolean } | null>(null)
   const [replaceTarget, setReplaceTarget] = useState<{
     plannedExerciseId: number; exerciseId: number; exerciseName: string; primaryMuscle: string
   } | null>(null)
@@ -466,7 +521,7 @@ export default function SessionLogPage() {
       const logged = setsByExercise.get(exerciseId) || []
       const nextSetIndex = logged.filter(s => !s.isWarmup).length
       const setRx = rx?.prescriptions.length ? rx.prescriptions[nextSetIndex] || rx.prescriptions[rx.prescriptions.length - 1] : undefined
-      const form = prefillFor(setRx, logged)
+      const form = ptIds.has(exerciseId) ? ptPrefillFor(setRx, logged) : prefillFor(setRx, logged)
       if (form) {
         setTimeout(() => {
           setSetForms(prev => ({ ...prev, [exerciseId]: form }))
@@ -490,12 +545,14 @@ export default function SessionLogPage() {
   // Group logged sets by exercise
   const setsByExercise = new Map<number, Array<{
     id: number; exerciseId: number; setNumber: number; weight: number; reps: number;
-    rirAchieved: number | null; isWarmup: boolean; isSkipped: boolean; exercise: { name: string; equipment: string }
+    rirAchieved: number | null; isWarmup: boolean; isSkipped: boolean; notes: string | null
+    exercise: { name: string; equipment: string; isPT?: boolean }
   }>>()
   if (session?.loggedSets) {
     for (const ls of session.loggedSets as Array<{
       id: number; exerciseId: number; setNumber: number; weight: number; reps: number;
-      rirAchieved: number | null; isWarmup: boolean; isSkipped: boolean; exercise: { name: string; equipment: string }
+      rirAchieved: number | null; isWarmup: boolean; isSkipped: boolean; notes: string | null
+    exercise: { name: string; equipment: string; isPT?: boolean }
     }>) {
       const existing = setsByExercise.get(ls.exerciseId) || []
       existing.push(ls)
@@ -506,8 +563,15 @@ export default function SessionLogPage() {
   const planned = (session?.workoutPlan?.plannedExercises || []) as Array<{
     id: number; exerciseId: number; plannedSets: number; repRange: string;
     targetRir: number; sortOrder: number;
-    exercise: { id: number; name: string; equipment: string; primaryMuscles: string[]; secondaryMuscles: string[] }
+    exercise: { id: number; name: string; equipment: string; primaryMuscles: string[]; secondaryMuscles: string[]; isPT?: boolean }
   }>
+
+  // PT / mobility exercises log a band or bodyweight load and never auto-progress
+  const ptIds = new Set<number>([
+    ...planned.filter(pe => pe.exercise.isPT).map(pe => pe.exercise.id),
+    ...Array.from(setsByExercise.values()).filter(sets => sets[0]?.exercise.isPT).map(sets => sets[0].exerciseId),
+    ...extraExercises.filter(ex => ex.isPT).map(ex => ex.id),
+  ])
 
   const hasMesocycle = !!(session?.workoutPlan as Record<string, unknown>)?.mesocycleWeek
 
@@ -528,21 +592,26 @@ export default function SessionLogPage() {
     const form = getForm(exerciseId)
     const existingSets = setsByExercise.get(exerciseId) || []
     const setNumber = existingSets.length + 1
+    const isPT = ptIds.has(exerciseId)
+    const load = isPT ? parsePtLoad(form.weight) : { weight: parseFloat(form.weight) || 0 }
 
     logSet.mutate({
       sessionId,
       exerciseId,
       setNumber,
-      weight: parseFloat(form.weight) || 0,
+      weight: load.weight,
       reps: parseInt(form.reps) || 0,
+      ...(load.notes ? { notes: load.notes } : {}),
     }, {
       onSuccess: () => {
         // Advance to the next set: its prescription, or the heaviest set done so far if that's more
         const rx = prescriptionMap.get(exerciseId)
         const nextIndex = setNumber // setNumber was 1-based, so this is the next 0-based index
         const nextRx = rx?.prescriptions[nextIndex] || rx?.prescriptions[rx.prescriptions.length - 1]
-        const justLogged = { weight: parseFloat(form.weight) || 0, reps: parseInt(form.reps) || 0, isWarmup: false, isSkipped: false }
-        const next = prefillFor(nextRx, [...existingSets, justLogged])
+        const justLogged = { weight: load.weight, reps: parseInt(form.reps) || 0, isWarmup: false, isSkipped: false, notes: load.notes ?? null }
+        const next = isPT
+          ? ptPrefillFor(nextRx, [...existingSets, justLogged])
+          : prefillFor(nextRx, [...existingSets, justLogged])
         if (next) {
           setSetForms(prev => ({ ...prev, [exerciseId]: next }))
         }
@@ -586,6 +655,7 @@ export default function SessionLogPage() {
       exerciseId: pe.exercise.id,
       exerciseName: pe.exercise.name,
       equipment: pe.exercise.equipment,
+      isPT: pe.exercise.isPT,
       primaryMuscles: pe.exercise.primaryMuscles,
       plannedSets: pe.plannedSets,
       repRange: pe.repRange,
@@ -603,6 +673,7 @@ export default function SessionLogPage() {
         exerciseId: exId,
         exerciseName: sets[0].exercise.name,
         equipment: sets[0].exercise.equipment,
+        isPT: sets[0].exercise.isPT,
         primaryMuscles: [],
       })
     }
@@ -614,6 +685,7 @@ export default function SessionLogPage() {
         exerciseId: ex.id,
         exerciseName: ex.name,
         equipment: ex.equipment,
+        isPT: ex.isPT,
         primaryMuscles: ex.primaryMuscles,
         repRange: ex.defaultRepRange,
       })
@@ -693,6 +765,7 @@ export default function SessionLogPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <CardTitle className="text-[15px] leading-snug">{entry.exerciseName}</CardTitle>
+                    {entry.isPT && <Badge variant="info" className="text-[10px]">PT</Badge>}
                     {targetSets > 0 && (
                       <Badge
                         variant={resolvedCount >= targetSets ? 'safe' : 'secondary'}
@@ -707,7 +780,7 @@ export default function SessionLogPage() {
                     {entry.repRange && (
                       <span className="text-xs text-muted-foreground">{entry.repRange} reps</span>
                     )}
-                    {entry.targetRir !== undefined && (
+                    {entry.targetRir !== undefined && !entry.isPT && (
                       <span className="text-xs text-muted-foreground">Target RIR {entry.targetRir}</span>
                     )}
                   </div>
@@ -720,7 +793,7 @@ export default function SessionLogPage() {
                   entry={entry}
                   isFirst={plannedIdx === 0}
                   isLast={plannedIdx === plannedEntries.length - 1}
-                  onHistory={() => setHistoryTarget({ exerciseId: entry.exerciseId, exerciseName: entry.exerciseName })}
+                  onHistory={() => setHistoryTarget({ exerciseId: entry.exerciseId, exerciseName: entry.exerciseName, isPT: entry.isPT })}
                   onReplace={() => {
                     if (entry.plannedExerciseId) {
                       setReplaceTarget({
@@ -758,7 +831,7 @@ export default function SessionLogPage() {
                 >
                   <span className="w-6 text-center text-xs text-muted-foreground">{set.setNumber}</span>
                   <span className="flex-1">
-                    {set.isSkipped ? 'Skipped' : `${set.weight} lb × ${set.reps}`}
+                    {set.isSkipped ? 'Skipped' : formatSet(entry.isPT, set.weight, set.reps, set.notes)}
                   </span>
                   {!set.isSkipped && set.rirAchieved !== null && (
                     <Badge variant="secondary" className="text-[10px]">RIR {set.rirAchieved}</Badge>
@@ -786,7 +859,7 @@ export default function SessionLogPage() {
                       className="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm bg-muted/30 text-muted-foreground border border-dashed border-muted"
                     >
                       <span className="w-6 text-center text-xs">{gs.setNumber}</span>
-                      <span className="flex-1">{gs.suggestedWeight} lb × {gs.suggestedReps}</span>
+                      <span className="flex-1">{formatSet(entry.isPT, gs.suggestedWeight, gs.suggestedReps, gs.suggestedNote)}</span>
                       <span className="text-[10px]">planned</span>
                     </div>
                   ))}
@@ -796,9 +869,10 @@ export default function SessionLogPage() {
               {/* New set input — weight × reps, no manual RIR */}
               <div className="flex items-center gap-2">
                 <Input
-                  type="number"
-                  inputMode="decimal"
-                  placeholder="Weight"
+                  type={entry.isPT ? 'text' : 'number'}
+                  inputMode={entry.isPT ? 'text' : 'decimal'}
+                  placeholder={entry.isPT ? 'Band / lb / BW' : 'Weight'}
+                  aria-label={entry.isPT ? 'Band color or weight (optional)' : 'Weight'}
                   value={form.weight}
                   onChange={(e) => updateForm(entry.exerciseId, 'weight', e.target.value)}
                   className="h-11 min-w-0 flex-1 text-center"
@@ -817,7 +891,7 @@ export default function SessionLogPage() {
                   className="h-11 w-11 shrink-0"
                   aria-label="Log set"
                   onClick={() => handleLogSet(entry.exerciseId)}
-                  disabled={!form.weight || !form.reps}
+                  disabled={(!entry.isPT && !form.weight) || !form.reps}
                 >
                   <Plus className="h-5 w-5" />
                 </Button>
@@ -885,6 +959,7 @@ export default function SessionLogPage() {
         <ExerciseHistoryDialog
           exerciseId={historyTarget.exerciseId}
           exerciseName={historyTarget.exerciseName}
+          isPT={historyTarget.isPT}
           open={!!historyTarget}
           onClose={() => setHistoryTarget(null)}
         />
