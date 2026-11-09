@@ -73,6 +73,14 @@ const createSchema = z.object({
   progression: z.enum(['Conservative', 'Standard', 'Aggressive']).default('Standard'),
 })
 
+/** True when `ids` is a permutation of `expected` (no extras, no repeats, none missing). */
+function sameIdSet(ids: unknown[], expected: number[]): boolean {
+  if (ids.length !== expected.length) return false
+  const want = new Set(expected)
+  const seen = new Set<unknown>()
+  return ids.every(id => typeof id === 'number' && want.has(id) && !seen.has(id) && seen.add(id))
+}
+
 // GET /api/mesocycles/templates — list available mesocycle templates
 router.get('/templates', async (_req, res) => {
   res.json(
@@ -511,6 +519,65 @@ router.put('/planned-exercise/:id/sets', async (req, res) => {
   res.json({ success: true, scope })
 })
 
+// PUT /api/mesocycles/planned-exercise/:id/targets — change rep range and/or target RIR
+router.put('/planned-exercise/:id/targets', async (req, res) => {
+  const { userId } = req as unknown as AuthRequest
+  const { repRange, targetRir, scope = 'thisWeek' } = req.body as {
+    repRange?: string
+    targetRir?: number
+    scope?: 'thisWeek' | 'remaining'
+  }
+  const data: { repRange?: string; targetRir?: number } = {}
+  if (repRange !== undefined) {
+    const m = /^(\d{1,2})-(\d{1,2})$/.exec(repRange)
+    if (!m || Number(m[1]) < 1 || Number(m[1]) > Number(m[2])) {
+      res.status(400).json({ error: 'repRange must look like "8-12" (low-high)' })
+      return
+    }
+    data.repRange = repRange
+  }
+  if (targetRir !== undefined) {
+    if (!Number.isInteger(targetRir) || targetRir < 0 || targetRir > 5) {
+      res.status(400).json({ error: 'targetRir must be an integer 0–5' })
+      return
+    }
+    data.targetRir = targetRir
+  }
+  if (!Object.keys(data).length) {
+    res.status(400).json({ error: 'Nothing to change: pass repRange and/or targetRir' })
+    return
+  }
+
+  const pe = await prisma.plannedExercise.findUnique({
+    where: { id: parseInt(req.params.id) },
+    include: { workoutPlan: { include: { mesocycleWeek: { include: { mesocycle: true } } } } },
+  })
+  if (!pe || pe.workoutPlan.mesocycleWeek?.mesocycle.userId !== userId) {
+    res.status(404).json({ error: 'Planned exercise not found' })
+    return
+  }
+
+  if (scope === 'thisWeek') {
+    await prisma.plannedExercise.update({ where: { id: pe.id }, data })
+    res.json({ success: true, scope, updated: 1 })
+    return
+  }
+
+  // Same exercise, same workout label, this week and later
+  const { mesocycleId, weekNumber } = pe.workoutPlan.mesocycleWeek!
+  const result = await prisma.plannedExercise.updateMany({
+    where: {
+      exerciseId: pe.exerciseId,
+      workoutPlan: {
+        label: pe.workoutPlan.label,
+        mesocycleWeek: { mesocycleId, weekNumber: { gte: weekNumber } },
+      },
+    },
+    data,
+  })
+  res.json({ success: true, scope, updated: result.count })
+})
+
 // PUT /api/mesocycles/workout-plan/:planId/reorder — reorder exercises in a workout plan
 router.put('/workout-plan/:planId/reorder', async (req, res) => {
   const { userId } = req as unknown as AuthRequest
@@ -527,6 +594,11 @@ router.put('/workout-plan/:planId/reorder', async (req, res) => {
   })
   if (!workoutPlan || workoutPlan.mesocycleWeek?.mesocycle.userId !== userId) {
     res.status(404).json({ error: 'Workout plan not found' })
+    return
+  }
+  const ownIds = await prisma.plannedExercise.findMany({ where: { workoutPlanId: workoutPlan.id }, select: { id: true } })
+  if (!sameIdSet(exerciseOrder, ownIds.map(p => p.id))) {
+    res.status(400).json({ error: "exerciseOrder must list each of this workout's planned exercises exactly once" })
     return
   }
 
@@ -641,6 +713,10 @@ router.put('/workout-plan/:planId/reorder-remaining', async (req, res) => {
   })
   if (!plan || !plan.mesocycleWeek || plan.mesocycleWeek.mesocycle.userId !== userId) {
     res.status(404).json({ error: 'Workout plan not found' })
+    return
+  }
+  if (!sameIdSet(exerciseOrder, plan.plannedExercises.map(p => p.id))) {
+    res.status(400).json({ error: "exerciseOrder must list each of this workout's planned exercises exactly once" })
     return
   }
 

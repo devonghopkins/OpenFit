@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { NativeSelect } from '@/components/ui/native-select'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
-import { Save, Download, Database, Shield, LogOut, BarChart3, ChevronRight } from 'lucide-react'
+import { Save, Download, Database, Shield, LogOut, BarChart3, ChevronRight, Sparkles, Copy, Check } from 'lucide-react'
 
 export default function SettingsPage() {
   const { user, signOut } = useAuth()
@@ -62,6 +62,39 @@ export default function SettingsPage() {
 
       <h1 className="hidden text-2xl font-bold tracking-tight md:block">Settings</h1>
       <h2 className="pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground md:hidden">Settings</h2>
+
+      {/* Context for the Claude connector (read by get_training_overview) */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Sparkles className="h-4 w-4" /> Coaching notes
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">Claude reads these when it reviews your training. Save with Save Settings below.</p>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground">Goals</label>
+            <textarea
+              value={settings.advisorGoals || ''}
+              onChange={(e) => update('advisorGoals', e.target.value)}
+              rows={3}
+              placeholder="e.g. Bring up side delts and upper chest, keep legs at maintenance, 5 days a week"
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-base md:text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs text-muted-foreground">Current condition</label>
+            <textarea
+              value={settings.advisorCondition || ''}
+              onChange={(e) => update('advisorCondition', e.target.value)}
+              rows={3}
+              placeholder="e.g. Sleeping ~6h, left elbow sore on curls, gym has no hack squat"
+              className="w-full rounded-md border border-input bg-transparent px-3 py-2 text-base md:text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            />
+          </div>
+          <ConnectorUrl />
+        </CardContent>
+      </Card>
 
       {/* Units & Increments */}
       <Card>
@@ -250,6 +283,32 @@ function BodyWeightLogger() {
       <Button variant="outline" onClick={handleLog} disabled={saving || !weight}>
         Log
       </Button>
+    </div>
+  )
+}
+
+function ConnectorUrl() {
+  const url = `${window.location.origin}/api/mcp`
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch { /* clipboard blocked; the URL is selectable */ }
+  }
+  return (
+    <div className="space-y-1.5 rounded-lg bg-muted/50 p-3">
+      <p className="text-xs font-medium">Connect Claude</p>
+      <p className="text-xs text-muted-foreground">
+        In Claude, go to Customize → Connectors → Add custom connector and paste this URL. You'll be asked to allow access.
+      </p>
+      <div className="flex items-center gap-2">
+        <code className="min-w-0 flex-1 truncate rounded bg-background px-2 py-1.5 text-xs select-all">{url}</code>
+        <Button variant="outline" size="icon" className="shrink-0" onClick={copy} aria-label="Copy connector URL">
+          {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+        </Button>
+      </div>
     </div>
   )
 }

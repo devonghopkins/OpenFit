@@ -4,6 +4,9 @@ import type { Request, Response, NextFunction } from 'express'
 import cors from 'cors'
 import { router } from './router.js'
 import { prisma } from './db.js'
+import { toNodeHandler } from '@modelcontextprotocol/node'
+import { mcpHandler } from './mcp/tools.js'
+import { MCP_PATH, METADATA_PATH, protectedResourceMetadata, requireMcpAuth } from './mcp/auth.js'
 
 const app = express()
 
@@ -24,6 +27,12 @@ app.get('/api/health', async (_req, res) => {
     })
   }
 })
+
+// Claude connector (MCP). Own auth: answers 401 with OAuth discovery info instead of a plain error.
+app.get(METADATA_PATH, protectedResourceMetadata)
+app.get(/^\/\.well-known\/oauth-protected-resource(\/.*)?$/, protectedResourceMetadata)
+const mcpNode = toNodeHandler(mcpHandler)
+app.all(MCP_PATH, requireMcpAuth, (req, res) => void mcpNode(req, res, req.body))
 
 app.use('/api', router)
 

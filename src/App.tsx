@@ -11,6 +11,7 @@ import HistoryPage from '@/pages/history'
 import AnalyticsPage from '@/pages/analytics'
 import SettingsPage from '@/pages/settings'
 import LoginPage from '@/pages/login'
+import OAuthConsentPage from '@/pages/oauth-consent'
 import { Dumbbell } from 'lucide-react'
 
 const queryClient = new QueryClient({
@@ -45,6 +46,8 @@ function AppRoutes() {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Claude (or another app) asking to connect; shown full-screen, outside the tab bar */}
+        <Route path="/oauth/consent" element={<OAuthConsentPage />} />
         <Route element={<AppShell />}>
           <Route path="/" element={<Navigate to="/mesocycles" replace />} />
           <Route path="/exercises" element={<ExercisesPage />} />
