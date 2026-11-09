@@ -21,7 +21,8 @@ export function protectedResourceMetadata(req: Request, res: Response) {
   res.set('Cache-Control', 'public, max-age=300')
   res.json({
     resource: `${publicOrigin(req)}${MCP_PATH}`,
-    authorization_servers: [`${process.env.SUPABASE_URL}/auth/v1`],
+    // trim: the Vercel env value has carried a trailing newline, which breaks discovery
+    authorization_servers: [`${(process.env.SUPABASE_URL ?? '').trim().replace(/\/+$/, '')}/auth/v1`],
     bearer_methods_supported: ['header'],
     resource_name: 'OpenFit',
   })
