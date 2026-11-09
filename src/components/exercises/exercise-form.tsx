@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useCreateExercise, useUpdateExercise, type Exercise } from '@/hooks/use-exercises'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
 import { EQUIPMENT_TYPES, MOVEMENT_PATTERNS, MUSCLE_GROUPS } from '@/lib/constants'
 
 interface ExerciseFormProps {
@@ -63,7 +64,7 @@ export function ExerciseForm({ exercise, onClose }: ExerciseFormProps) {
               key={m}
               type="button"
               onClick={() => toggleMuscle(primaryMuscles, setPrimaryMuscles, m)}
-              className={`rounded-md border px-2 py-1 text-xs transition-colors ${
+              className={`h-9 rounded-md border px-2.5 text-xs transition-colors ${
                 primaryMuscles.includes(m)
                   ? 'border-volume-safe bg-volume-safe/20 text-volume-safe'
                   : 'border-input text-muted-foreground hover:bg-accent'
@@ -83,7 +84,7 @@ export function ExerciseForm({ exercise, onClose }: ExerciseFormProps) {
               key={m}
               type="button"
               onClick={() => toggleMuscle(secondaryMuscles, setSecondaryMuscles, m)}
-              className={`rounded-md border px-2 py-1 text-xs transition-colors ${
+              className={`h-9 rounded-md border px-2.5 text-xs transition-colors ${
                 secondaryMuscles.includes(m)
                   ? 'border-volume-info bg-volume-info/20 text-volume-info'
                   : 'border-input text-muted-foreground hover:bg-accent'
@@ -98,27 +99,27 @@ export function ExerciseForm({ exercise, onClose }: ExerciseFormProps) {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="text-sm font-medium">Equipment</label>
-          <select
+          <NativeSelect
             value={equipment}
             onChange={(e) => setEquipment(e.target.value)}
-            className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            className="mt-1"
           >
             {EQUIPMENT_TYPES.map((e) => (
               <option key={e} value={e}>{e}</option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
         <div>
           <label className="text-sm font-medium">Movement Pattern</label>
-          <select
+          <NativeSelect
             value={movementPattern}
             onChange={(e) => setMovementPattern(e.target.value)}
-            className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+            className="mt-1"
           >
             {MOVEMENT_PATTERNS.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
-          </select>
+          </NativeSelect>
         </div>
       </div>
 
@@ -135,6 +136,7 @@ export function ExerciseForm({ exercise, onClose }: ExerciseFormProps) {
           <label className="text-sm font-medium">SFR Rating (1-5)</label>
           <Input
             type="number"
+            inputMode="numeric"
             min={1}
             max={5}
             value={sfrRating}
@@ -152,12 +154,12 @@ export function ExerciseForm({ exercise, onClose }: ExerciseFormProps) {
         />
       </div>
 
-      <div className="flex justify-end gap-2 pt-2">
-        <Button type="button" variant="outline" onClick={onClose}>
+      <div className="grid grid-cols-2 gap-2 pt-2 sm:flex sm:justify-end">
+        <Button type="button" variant="outline" className="h-11 sm:h-10" onClick={onClose}>
           Cancel
         </Button>
-        <Button type="submit" disabled={!name || primaryMuscles.length === 0}>
-          {isEditing ? 'Save Changes' : 'Create Exercise'}
+        <Button type="submit" className="h-11 sm:h-10" disabled={!name || primaryMuscles.length === 0}>
+          {isEditing ? 'Save' : 'Create'}
         </Button>
       </div>
     </form>

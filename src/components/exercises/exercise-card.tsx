@@ -13,25 +13,28 @@ interface ExerciseCardProps {
 
 export function ExerciseCard({ exercise, onEdit, onToggleFavorite }: ExerciseCardProps) {
   return (
-    <Card className="group relative transition-colors hover:border-muted-foreground/50">
+    <Card
+      className="group relative cursor-pointer transition-colors hover:border-muted-foreground/50 active:bg-muted/30"
+      onClick={onEdit}
+    >
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0 flex-1">
-            <h3 className="truncate font-medium text-sm">{exercise.name}</h3>
+            <h3 className="font-medium text-[15px] leading-snug">{exercise.name}</h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               {exercise.equipment} &middot; {exercise.movementPattern}
             </p>
           </div>
-          <div className="flex gap-1 shrink-0">
+          <div className="-mr-2 -mt-2 flex shrink-0" onClick={(e) => e.stopPropagation()}>
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7"
               onClick={onToggleFavorite}
+              aria-label={exercise.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
             >
               <Star
                 className={cn(
-                  'h-3.5 w-3.5',
+                  'h-[18px] w-[18px]',
                   exercise.isFavorite
                     ? 'fill-volume-warning text-volume-warning'
                     : 'text-muted-foreground'
@@ -41,10 +44,11 @@ export function ExerciseCard({ exercise, onEdit, onToggleFavorite }: ExerciseCar
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 opacity-0 group-hover:opacity-100"
+              className="hidden md:inline-flex md:opacity-0 md:group-hover:opacity-100"
               onClick={onEdit}
+              aria-label="Edit exercise"
             >
-              <Pencil className="h-3.5 w-3.5" />
+              <Pencil className="h-4 w-4" />
             </Button>
           </div>
         </div>

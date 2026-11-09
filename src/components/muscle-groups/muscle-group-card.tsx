@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { NativeSelect } from '@/components/ui/native-select'
 import { Pencil, Check, X, AlertTriangle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -75,16 +76,16 @@ export function MuscleGroupCard({ group }: MuscleGroupCardProps) {
               {group.priorityTier}
             </Badge>
             {!editing ? (
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditing(true)}>
-                <Pencil className="h-3.5 w-3.5" />
+              <Button variant="ghost" size="icon" className="-mr-2" onClick={() => setEditing(true)} aria-label={`Edit ${group.name}`}>
+                <Pencil className="h-4 w-4" />
               </Button>
             ) : (
               <>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-volume-safe" onClick={handleSave}>
-                  <Check className="h-3.5 w-3.5" />
+                <Button variant="ghost" size="icon" className="text-volume-safe" onClick={handleSave} aria-label="Save">
+                  <Check className="h-5 w-5" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleCancel}>
-                  <X className="h-3.5 w-3.5" />
+                <Button variant="ghost" size="icon" className="-mr-2" onClick={handleCancel} aria-label="Cancel">
+                  <X className="h-5 w-5" />
                 </Button>
               </>
             )}
@@ -129,7 +130,7 @@ export function MuscleGroupCard({ group }: MuscleGroupCardProps) {
                   min={0}
                   value={mev}
                   onChange={(e) => setMev(Number(e.target.value))}
-                  className="h-8 text-sm"
+                  inputMode="numeric"
                 />
               </div>
               <div>
@@ -139,7 +140,7 @@ export function MuscleGroupCard({ group }: MuscleGroupCardProps) {
                   min={0}
                   value={mav}
                   onChange={(e) => setMav(Number(e.target.value))}
-                  className="h-8 text-sm"
+                  inputMode="numeric"
                 />
               </div>
               <div>
@@ -149,7 +150,7 @@ export function MuscleGroupCard({ group }: MuscleGroupCardProps) {
                   min={0}
                   value={mrv}
                   onChange={(e) => setMrv(Number(e.target.value))}
-                  className="h-8 text-sm"
+                  inputMode="numeric"
                 />
               </div>
             </div>
@@ -162,30 +163,29 @@ export function MuscleGroupCard({ group }: MuscleGroupCardProps) {
                   max={6}
                   value={frequency}
                   onChange={(e) => setFrequency(Number(e.target.value))}
-                  className="h-8 text-sm"
+                  inputMode="numeric"
                 />
               </div>
               <div>
                 <label className="text-[11px] text-muted-foreground">Priority</label>
-                <select
+                <NativeSelect
                   value={priority}
                   onChange={(e) => setPriority(e.target.value)}
-                  className="flex h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
                 >
                   <option value="High">High</option>
                   <option value="Medium">Medium</option>
                   <option value="Low">Low</option>
-                </select>
+                </NativeSelect>
               </div>
             </div>
           </div>
         ) : (
-          <div className="flex items-center gap-4 text-xs text-muted-foreground">
+          <div className="flex items-center justify-between gap-4 text-xs text-muted-foreground">
             <span>{group.defaultFrequency}x/week</span>
             <button
               onClick={handleToggleInjured}
               className={cn(
-                'rounded-md border px-2 py-0.5 transition-colors',
+                'h-9 rounded-md border px-3 transition-colors',
                 group.injured
                   ? 'border-volume-danger/50 bg-volume-danger/10 text-volume-danger'
                   : 'border-input hover:bg-accent'

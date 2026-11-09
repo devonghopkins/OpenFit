@@ -4,6 +4,7 @@ import { useMuscleGroups } from '@/hooks/use-muscle-groups'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { api } from '@/lib/api'
+import { NativeSelect } from '@/components/ui/native-select'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, Cell,
@@ -63,7 +64,7 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
 
       {/* Muscle Group Volume Status */}
@@ -114,16 +115,15 @@ export default function AnalyticsPage() {
           <CardTitle className="text-sm">Exercise Progress</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <select
+          <NativeSelect
             value={selectedExercise}
             onChange={(e) => setSelectedExercise(Number(e.target.value))}
-            className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm"
           >
             <option value={0}>Select an exercise...</option>
             {exercises?.map(ex => (
               <option key={ex.id} value={ex.id}>{ex.name}</option>
             ))}
-          </select>
+          </NativeSelect>
 
           {progress.length > 0 ? (
             <>
@@ -131,8 +131,8 @@ export default function AnalyticsPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={progress.map(p => ({ ...p, date: new Date(p.date).toLocaleDateString() }))}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-                    <XAxis dataKey="date" tick={{ fill: '#a1a1aa', fontSize: 10 }} />
-                    <YAxis tick={{ fill: '#a1a1aa', fontSize: 10 }} />
+                    <XAxis dataKey="date" tick={{ fill: '#a1a1aa', fontSize: 10 }} minTickGap={24} />
+                    <YAxis tick={{ fill: '#a1a1aa', fontSize: 10 }} width={36} />
                     <Tooltip
                       contentStyle={{ backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: 8, fontSize: 12 }}
                     />

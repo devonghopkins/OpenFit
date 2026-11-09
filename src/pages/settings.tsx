@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react'
+import { Link } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { NativeSelect } from '@/components/ui/native-select'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
-import { Save, Download, Database, Shield, LogOut } from 'lucide-react'
+import { Save, Download, Database, Shield, LogOut, BarChart3, ChevronRight } from 'lucide-react'
 
 export default function SettingsPage() {
   const { user, signOut } = useAuth()
@@ -45,45 +47,59 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
+    <div className="space-y-5">
+      {/* Phones reach this page from the "More" tab, so link the pages without their own tab */}
+      <div className="space-y-3 md:hidden">
+        <h1 className="text-2xl font-bold tracking-tight">More</h1>
+        <Card>
+          <Link to="/analytics" className="flex h-14 items-center gap-3 px-4 active:bg-muted/30">
+            <BarChart3 className="h-5 w-5 text-muted-foreground" />
+            <span className="flex-1 font-medium">Analytics</span>
+            <ChevronRight className="h-5 w-5 text-muted-foreground" />
+          </Link>
+        </Card>
+      </div>
+
+      <h1 className="hidden text-2xl font-bold tracking-tight md:block">Settings</h1>
+      <h2 className="pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground md:hidden">Settings</h2>
 
       {/* Units & Increments */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Units & Load Increments</CardTitle>
+          <CardTitle className="text-sm">Units & load increments</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="text-xs text-muted-foreground">Weight Unit</label>
-              <select
+              <NativeSelect
                 value={settings.units || 'lb'}
                 onChange={(e) => update('units', e.target.value)}
-                className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="mt-1"
               >
                 <option value="lb">Pounds (lb)</option>
                 <option value="kg">Kilograms (kg)</option>
-              </select>
+              </NativeSelect>
             </div>
             <div>
               <label className="text-xs text-muted-foreground">Theme</label>
-              <select
+              <NativeSelect
                 value={settings.theme || 'dark'}
                 onChange={(e) => update('theme', e.target.value)}
-                className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                className="mt-1"
               >
                 <option value="dark">Dark</option>
                 <option value="light">Light</option>
-              </select>
+              </NativeSelect>
             </div>
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="text-xs text-muted-foreground">Barbell Increment</label>
+              <label className="text-xs text-muted-foreground">Barbell</label>
               <Input
                 type="number"
+                inputMode="decimal"
                 step="0.5"
                 value={settings.incrementBarbell || '5'}
                 onChange={(e) => update('incrementBarbell', e.target.value)}
@@ -91,9 +107,10 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">Dumbbell Increment</label>
+              <label className="text-xs text-muted-foreground">Dumbbell</label>
               <Input
                 type="number"
+                inputMode="decimal"
                 step="0.5"
                 value={settings.incrementDumbbell || '2.5'}
                 onChange={(e) => update('incrementDumbbell', e.target.value)}
@@ -101,9 +118,10 @@ export default function SettingsPage() {
               />
             </div>
             <div>
-              <label className="text-xs text-muted-foreground">Cable Increment</label>
+              <label className="text-xs text-muted-foreground">Cable</label>
               <Input
                 type="number"
+                inputMode="decimal"
                 step="0.5"
                 value={settings.incrementCable || '5'}
                 onChange={(e) => update('incrementCable', e.target.value)}
@@ -125,6 +143,7 @@ export default function SettingsPage() {
               <label className="text-xs text-muted-foreground">Compound Exercises</label>
               <Input
                 type="number"
+                inputMode="numeric"
                 step="15"
                 value={settings.restTimerCompound || '120'}
                 onChange={(e) => update('restTimerCompound', e.target.value)}
@@ -135,6 +154,7 @@ export default function SettingsPage() {
               <label className="text-xs text-muted-foreground">Isolation Exercises</label>
               <Input
                 type="number"
+                inputMode="numeric"
                 step="15"
                 value={settings.restTimerIsolation || '90'}
                 onChange={(e) => update('restTimerIsolation', e.target.value)}
@@ -155,7 +175,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Button onClick={handleSave} disabled={saving} className="w-full">
+      <Button onClick={handleSave} disabled={saving} className="h-11 w-full">
         <Save className="mr-2 h-4 w-4" />
         {saving ? 'Saving...' : 'Save Settings'}
       </Button>
@@ -168,16 +188,16 @@ export default function SettingsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1" onClick={handleBackup}>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button variant="outline" onClick={handleBackup}>
               <Shield className="mr-2 h-4 w-4" /> Backup Database
             </Button>
-            <Button variant="outline" className="flex-1" onClick={handleExport}>
+            <Button variant="outline" onClick={handleExport}>
               <Download className="mr-2 h-4 w-4" /> Export JSON
             </Button>
           </div>
           {backupMessage && (
-            <Badge variant="safe" className="text-xs">{backupMessage}</Badge>
+            <Badge variant="safe" className="text-xs whitespace-normal break-all">{backupMessage}</Badge>
           )}
         </CardContent>
       </Card>
@@ -221,6 +241,7 @@ function BodyWeightLogger() {
     <div className="flex gap-2">
       <Input
         type="number"
+        inputMode="decimal"
         step="0.1"
         placeholder="Body weight"
         value={weight}

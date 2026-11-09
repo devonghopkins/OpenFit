@@ -55,11 +55,59 @@ input, textarea, [contenteditable] {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Safari iOS momentum scrolling for dialogs */
-[role="dialog"] {
-  -webkit-overflow-scrolling: touch;
+/* No double-tap-to-zoom delay on tappable things */
+button, a, [role="button"], select, label {
+  touch-action: manipulation;
+}
+
+/* iOS zooms the whole page when you focus a field with text under 16px.
+   Unlayered so it wins over Tailwind's text-sm/text-xs utilities. */
+@media (max-width: 767px), (pointer: coarse) {
+  input, select, textarea {
+    font-size: 16px;
+  }
 }
 
 #root {
   min-height: 100svh;
+}
+
+/* Modal entrance: bottom sheet on phones, fade + scale on wider screens */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes dialog-pop {
+  /* Centering uses Tailwind's `translate` property, so only scale here */
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes overlay-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.dialog-overlay[data-state="open"] {
+  animation: overlay-in 150ms ease-out;
+}
+@layer components {
+  /* Phone layout for modals: a sheet pinned above the keyboard (see keyboard-inset.ts),
+     never taller than the space below the status bar. sm: utilities override this. */
+  .dialog-sheet {
+    bottom: var(--kb-inset, 0px);
+    max-height: calc(100dvh - var(--kb-inset, 0px) - env(safe-area-inset-top) - 0.5rem);
+  }
+}
+.dialog-sheet[data-state="open"] {
+  animation: sheet-up 240ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+@media (min-width: 640px) {
+  .dialog-sheet[data-state="open"] {
+    animation: dialog-pop 160ms ease-out;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dialog-overlay[data-state="open"],
+  .dialog-sheet[data-state="open"] {
+    animation: none;
+  }
 }

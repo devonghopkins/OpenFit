@@ -1,5 +1,6 @@
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
+import { NativeSelect } from '@/components/ui/native-select'
 import { EQUIPMENT_TYPES, MUSCLE_GROUPS } from '@/lib/constants'
 import { Search, Star, X } from 'lucide-react'
 
@@ -29,46 +30,44 @@ export function ExerciseFilters({ filters, onChange }: ExerciseFiltersProps) {
           value={filters.search}
           onChange={(e) => update({ search: e.target.value })}
           className="pl-9"
+          type="search"
+          enterKeyHint="search"
         />
       </div>
-      <div className="flex flex-wrap gap-2">
-        <select
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+        <NativeSelect
           value={filters.muscle}
           onChange={(e) => update({ muscle: e.target.value })}
-          className="h-8 rounded-md border border-input bg-background px-3 text-xs"
+          className="sm:w-auto"
         >
           <option value="">All Muscles</option>
           {MUSCLE_GROUPS.map((m) => (
             <option key={m} value={m}>{m}</option>
           ))}
-        </select>
-        <select
+        </NativeSelect>
+        <NativeSelect
           value={filters.equipment}
           onChange={(e) => update({ equipment: e.target.value })}
-          className="h-8 rounded-md border border-input bg-background px-3 text-xs"
+          className="sm:w-auto"
         >
           <option value="">All Equipment</option>
           {EQUIPMENT_TYPES.map((e) => (
             <option key={e} value={e}>{e}</option>
           ))}
-        </select>
+        </NativeSelect>
         <Button
           variant={filters.favorites ? 'default' : 'outline'}
-          size="sm"
           onClick={() => update({ favorites: !filters.favorites })}
-          className="h-8"
         >
-          <Star className="mr-1 h-3 w-3" />
+          <Star className="mr-1.5 h-4 w-4" />
           Favorites
         </Button>
         {hasActiveFilters && (
           <Button
             variant="ghost"
-            size="sm"
             onClick={() => onChange({ search: filters.search, muscle: '', equipment: '', favorites: false })}
-            className="h-8"
           >
-            <X className="mr-1 h-3 w-3" />
+            <X className="mr-1.5 h-4 w-4" />
             Clear
           </Button>
         )}

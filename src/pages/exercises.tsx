@@ -32,7 +32,7 @@ export default function ExercisesPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">Exercises</h1>
@@ -41,7 +41,7 @@ export default function ExercisesPage() {
           </p>
         </div>
         <Button onClick={() => setCreating(true)} className="shrink-0">
-          <Plus className="mr-2 h-4 w-4" />
+          <Plus className="mr-1.5 h-4 w-4" />
           Add
         </Button>
       </div>
@@ -63,7 +63,7 @@ export default function ExercisesPage() {
         </div>
       )}
 
-      <Dialog open={!!editingExercise} onOpenChange={() => setEditingExercise(null)}>
+      <Dialog open={!!editingExercise} onOpenChange={(open) => { if (!open) setEditingExercise(null) }}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Edit Exercise</DialogTitle>

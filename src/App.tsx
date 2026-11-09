@@ -1,8 +1,7 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider, useAuth } from '@/lib/auth-context'
 import { AppShell } from '@/components/layout/app-shell'
-import DashboardPage from '@/pages/dashboard'
 import ExercisesPage from '@/pages/exercises'
 import MuscleGroupsPage from '@/pages/muscle-groups'
 import MesocyclesPage from '@/pages/mesocycles'
@@ -28,7 +27,7 @@ function AppRoutes() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-dvh bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary animate-pulse">
             <Dumbbell className="h-6 w-6 text-primary-foreground" />
@@ -47,7 +46,7 @@ function AppRoutes() {
     <BrowserRouter>
       <Routes>
         <Route element={<AppShell />}>
-          <Route path="/" element={<DashboardPage />} />
+          <Route path="/" element={<Navigate to="/mesocycles" replace />} />
           <Route path="/exercises" element={<ExercisesPage />} />
           <Route path="/muscle-groups" element={<MuscleGroupsPage />} />
           <Route path="/mesocycles" element={<MesocyclesPage />} />
@@ -56,6 +55,7 @@ function AppRoutes() {
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<Navigate to="/mesocycles" replace />} />
         </Route>
       </Routes>
     </BrowserRouter>

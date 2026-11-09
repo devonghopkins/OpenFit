@@ -5,12 +5,13 @@ import {
   useExerciseHistory, useWorkoutPrescriptions,
   type ExercisePrescription,
 } from '@/hooks/use-sessions'
-import { useSwapExercise, useSwapExerciseRemaining, useReorderExercises, useRemovePlannedExercise } from '@/hooks/use-mesocycles'
-import { useExercises } from '@/hooks/use-exercises'
+import { useSwapExercise, useSwapExerciseRemaining, useReorderExercises, useRemovePlannedExercise, useAddExerciseToPlan, useAddExercisePropagated } from '@/hooks/use-mesocycles'
+import { useExercises, type Exercise } from '@/hooks/use-exercises'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { ActionSheet } from '@/components/ui/action-sheet'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog'
@@ -50,10 +51,10 @@ function RestTimer({ defaultSeconds = 120 }: { defaultSeconds?: number }) {
     <div className="flex items-center gap-2">
       <Button
         variant={running ? 'destructive' : 'outline'}
-        size="sm"
+        className="h-10 min-w-[5.5rem] tabular-nums"
         onClick={() => running ? setRunning(false) : start()}
       >
-        <Timer className="mr-1 h-3 w-3" />
+        <Timer className="mr-1.5 h-4 w-4" />
         {running ? `${mins}:${secs.toString().padStart(2, '0')}` : 'Rest'}
       </Button>
     </div>
@@ -104,12 +105,12 @@ function ExerciseHistoryDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
-      <DialogContent className="max-h-[80vh] flex flex-col">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle className="text-base">Exercise History</DialogTitle>
           <DialogDescription>{exerciseName}</DialogDescription>
         </DialogHeader>
-        <div className="flex-1 overflow-y-auto space-y-4 min-h-0 max-h-[50vh]">
+        <div className="space-y-4">
           {isLoading && <p className="text-center text-sm text-muted-foreground py-6">Loading...</p>}
           {!isLoading && grouped.size === 0 && (
             <p className="text-center text-sm text-muted-foreground py-6">No history yet for this exercise.</p>
@@ -193,7 +194,7 @@ function ReplaceExerciseDialog({
 
   return (
     <Dialog open={!!target} onOpenChange={(o) => { if (!o) handleClose() }}>
-      <DialogContent className="max-h-[80vh] flex flex-col">
+      <DialogContent className="h-[92dvh] sm:h-[80vh]">
         <DialogHeader>
           <DialogTitle className="text-base">Replace Exercise</DialogTitle>
           <DialogDescription>
@@ -223,13 +224,13 @@ function ReplaceExerciseDialog({
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Search exercises..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
             </div>
-            <div className="flex-1 overflow-y-auto space-y-1 min-h-0 max-h-[50vh] -mx-2 px-2">
+            <div className="-mx-4 flex-1 min-h-0 space-y-0.5 overflow-y-auto overscroll-contain px-2 sm:-mx-6 sm:px-4">
               {filtered?.map((ex) => (
                 <button
                   key={ex.id}
                   onClick={() => handlePick(ex.id)}
                   disabled={isPending}
-                  className="w-full flex items-center gap-3 p-2.5 rounded-lg text-left hover:bg-muted transition-colors disabled:opacity-50"
+                  className="w-full flex items-center gap-3 px-2 py-3 rounded-lg text-left hover:bg-muted active:bg-muted transition-colors disabled:opacity-50"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
@@ -242,6 +243,131 @@ function ReplaceExerciseDialog({
                       <span className="text-[10px] text-muted-foreground">{ex.defaultRepRange}</span>
                     </div>
                   </div>
+                </button>
+              ))}
+              {filtered?.length === 0 && (
+                <p className="text-center text-sm text-muted-foreground py-6">No matching exercises found</p>
+              )}
+            </div>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Add an exercise to today's workout
+function AddExerciseDialog({
+  open,
+  workoutPlanId,
+  hasMesocycle,
+  excludeIds,
+  onAddedLocally,
+  onAdded,
+  onClose,
+}: {
+  open: boolean
+  workoutPlanId?: number
+  hasMesocycle: boolean
+  excludeIds: Set<number>
+  /** Freeform sessions have no plan; the exercise just appears until sets are logged */
+  onAddedLocally: (exercise: Exercise) => void
+  onAdded: (exerciseId: number) => void
+  onClose: () => void
+}) {
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<Exercise | null>(null)
+  const { data: allExercises } = useExercises({})
+  const addToPlan = useAddExerciseToPlan()
+  const addPropagated = useAddExercisePropagated()
+  const isPending = addToPlan.isPending || addPropagated.isPending
+
+  const filtered = allExercises
+    ?.filter(ex => !excludeIds.has(ex.id))
+    .filter(ex => !search || ex.name.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      if (a.isFavorite !== b.isFavorite) return a.isFavorite ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+
+  const handleClose = () => {
+    setSearch('')
+    setSelected(null)
+    onClose()
+  }
+
+  const add = async (exercise: Exercise, remainingWeeks: boolean) => {
+    if (!workoutPlanId) {
+      onAddedLocally(exercise)
+    } else {
+      const vars = { workoutPlanId, exerciseId: exercise.id, repRange: exercise.defaultRepRange }
+      if (remainingWeeks) await addPropagated.mutateAsync(vars)
+      else await addToPlan.mutateAsync(vars)
+    }
+    onAdded(exercise.id)
+    handleClose()
+  }
+
+  const pick = (exercise: Exercise) => {
+    // Only programmed workouts can carry the exercise into later weeks
+    if (workoutPlanId && hasMesocycle) setSelected(exercise)
+    else add(exercise, false)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) handleClose() }}>
+      <DialogContent className={cn(!selected && 'h-[92dvh] sm:h-[80vh]')}>
+        <DialogHeader>
+          <DialogTitle className="text-base">Add Exercise</DialogTitle>
+          <DialogDescription>
+            {selected ? <>Add <span className="font-medium text-foreground">{selected.name}</span> to…</> : 'Add an exercise you did today'}
+          </DialogDescription>
+        </DialogHeader>
+
+        {selected ? (
+          <div className="space-y-2">
+            <Button className="h-12 w-full" onClick={() => add(selected, false)} disabled={isPending}>
+              Just this workout
+            </Button>
+            <Button variant="outline" className="h-12 w-full" onClick={() => add(selected, true)} disabled={isPending}>
+              This workout + remaining weeks
+            </Button>
+            <Button variant="ghost" className="w-full" onClick={() => setSelected(null)} disabled={isPending}>
+              Back
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search exercises..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+                type="search"
+                enterKeyHint="search"
+              />
+            </div>
+            <div className="-mx-4 flex-1 min-h-0 space-y-0.5 overflow-y-auto overscroll-contain px-2 sm:-mx-6 sm:px-4">
+              {filtered?.map((ex) => (
+                <button
+                  key={ex.id}
+                  onClick={() => pick(ex)}
+                  disabled={isPending}
+                  className="w-full flex items-center gap-3 px-2 py-3 rounded-lg text-left hover:bg-muted active:bg-muted transition-colors disabled:opacity-50"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      {ex.isFavorite && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500 shrink-0" />}
+                      <span className="text-sm font-medium truncate">{ex.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[11px] text-muted-foreground">{ex.equipment}</span>
+                      <span className="text-[11px] text-muted-foreground truncate">{ex.primaryMuscles.join(', ')}</span>
+                    </div>
+                  </div>
+                  <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </button>
               ))}
               {filtered?.length === 0 && (
@@ -279,41 +405,23 @@ function ExerciseActions({
   const isPlanned = !!entry.plannedExerciseId
 
   return (
-    <div className="relative">
-      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setOpen(!open)}>
-        <MoreVertical className="h-4 w-4" />
+    <>
+      <Button variant="ghost" size="icon" className="-mr-2 shrink-0" onClick={() => setOpen(true)} aria-label="Exercise options">
+        <MoreVertical className="h-5 w-5" />
       </Button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-8 z-50 w-44 rounded-lg border bg-background shadow-lg py-1">
-            <button className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted transition-colors" onClick={() => { onHistory(); setOpen(false) }}>
-              <History className="h-3.5 w-3.5" /> View History
-            </button>
-            {isPlanned && (
-              <>
-                {!isFirst && (
-                  <button className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted transition-colors" onClick={() => { onMoveUp(); setOpen(false) }}>
-                    <ChevronUp className="h-3.5 w-3.5" /> Move Up
-                  </button>
-                )}
-                {!isLast && (
-                  <button className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted transition-colors" onClick={() => { onMoveDown(); setOpen(false) }}>
-                    <ChevronDown className="h-3.5 w-3.5" /> Move Down
-                  </button>
-                )}
-                <button className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted transition-colors" onClick={() => { onReplace(); setOpen(false) }}>
-                  <ArrowLeftRight className="h-3.5 w-3.5" /> Replace Exercise
-                </button>
-                <button className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-muted transition-colors text-volume-danger" onClick={() => { onRemove(); setOpen(false) }}>
-                  <X className="h-3.5 w-3.5" /> Remove Exercise
-                </button>
-              </>
-            )}
-          </div>
-        </>
-      )}
-    </div>
+      <ActionSheet
+        open={open}
+        onOpenChange={setOpen}
+        title={entry.exerciseName}
+        items={[
+          { label: 'View history', icon: History, onSelect: onHistory },
+          { label: 'Move up', icon: ChevronUp, hidden: !isPlanned || isFirst, onSelect: onMoveUp },
+          { label: 'Move down', icon: ChevronDown, hidden: !isPlanned || isLast, onSelect: onMoveDown },
+          { label: 'Replace exercise', icon: ArrowLeftRight, hidden: !isPlanned, onSelect: onReplace },
+          { label: 'Remove exercise', icon: X, hidden: !isPlanned, destructive: true, onSelect: onRemove },
+        ]}
+      />
+    </>
   )
 }
 
@@ -356,6 +464,10 @@ export default function SessionLogPage() {
   const [removeTarget, setRemoveTarget] = useState<{
     plannedExerciseId: number; exerciseName: string
   } | null>(null)
+  const [addingExercise, setAddingExercise] = useState(false)
+  // Exercises added to a freeform session that have no sets logged yet
+  const [extraExercises, setExtraExercises] = useState<Exercise[]>([])
+  const [scrollToExerciseId, setScrollToExerciseId] = useState<number | null>(null)
 
   const getForm = (exerciseId: number): SetFormData => {
     if (setForms[exerciseId]) return setForms[exerciseId]
@@ -500,6 +612,18 @@ export default function SessionLogPage() {
     }
   }
 
+  for (const ex of extraExercises) {
+    if (!seenIds.has(ex.id) && !setsByExercise.has(ex.id)) {
+      exerciseOrder.push({
+        exerciseId: ex.id,
+        exerciseName: ex.name,
+        equipment: ex.equipment,
+        primaryMuscles: ex.primaryMuscles,
+        repRange: ex.defaultRepRange,
+      })
+    }
+  }
+
   const handleMoveExercise = (index: number, direction: 'up' | 'down') => {
     const plannedEntries = exerciseOrder.filter(e => e.plannedExerciseId)
     if (plannedEntries.length < 2) return
@@ -514,6 +638,13 @@ export default function SessionLogPage() {
     }
   }
 
+  const addedCardPresent = scrollToExerciseId !== null && exerciseOrder.some(e => e.exerciseId === scrollToExerciseId)
+  useEffect(() => {
+    if (!addedCardPresent || scrollToExerciseId === null) return
+    document.getElementById(`exercise-${scrollToExerciseId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setScrollToExerciseId(null)
+  }, [addedCardPresent, scrollToExerciseId])
+
   if (isLoading) {
     return <div className="py-12 text-center text-muted-foreground">Loading session...</div>
   }
@@ -526,15 +657,16 @@ export default function SessionLogPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
-          <ArrowLeft className="h-4 w-4" />
+      {/* Sticky so the rest timer stays reachable while scrolling */}
+      <div className="sticky top-0 z-30 -mx-4 -mt-4 flex items-center gap-2 border-b border-border/60 bg-background/95 px-4 py-2 backdrop-blur-lg md:-mx-6 md:-mt-6 md:px-6">
+        <Button variant="ghost" size="icon" className="-ml-2 shrink-0" onClick={() => navigate(-1)} aria-label="Back">
+          <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold">
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-lg font-bold leading-tight">
             {(session.workoutPlan as { label?: string })?.label || 'Workout'}
           </h1>
-          <p className="text-xs text-muted-foreground">
+          <p className="truncate text-xs text-muted-foreground">
             {new Date(session.date).toLocaleDateString()}
             {(session.workoutPlan as { muscleGroups?: string[] })?.muscleGroups && (
               <> &middot; {(session.workoutPlan as { muscleGroups: string[] }).muscleGroups.join(', ')}</>
@@ -558,12 +690,12 @@ export default function SessionLogPage() {
         const ghostSets = rx?.prescriptions.slice(resolvedCount) || []
 
         return (
-          <Card key={entry.exerciseId}>
+          <Card key={entry.exerciseId} id={`exercise-${entry.exerciseId}`} className="scroll-mt-20">
             <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
+              <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <CardTitle className="text-sm">{entry.exerciseName}</CardTitle>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <CardTitle className="text-[15px] leading-snug">{entry.exerciseName}</CardTitle>
                     {targetSets > 0 && (
                       <Badge
                         variant={resolvedCount >= targetSets ? 'safe' : 'secondary'}
@@ -573,18 +705,18 @@ export default function SessionLogPage() {
                       </Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[11px] text-muted-foreground">{entry.equipment}</span>
+                  <div className="flex flex-wrap items-center gap-x-2 mt-1">
+                    <span className="text-xs text-muted-foreground">{entry.equipment}</span>
                     {entry.repRange && (
-                      <span className="text-[11px] text-muted-foreground">{entry.repRange} reps</span>
+                      <span className="text-xs text-muted-foreground">{entry.repRange} reps</span>
                     )}
                     {entry.targetRir !== undefined && (
-                      <span className="text-[11px] text-muted-foreground">Target RIR {entry.targetRir}</span>
+                      <span className="text-xs text-muted-foreground">Target RIR {entry.targetRir}</span>
                     )}
                   </div>
                   {/* Exercise notes */}
                   {entry.notes && (
-                    <p className="text-[10px] text-volume-warning mt-0.5 italic">{entry.notes}</p>
+                    <p className="text-xs text-volume-warning mt-1 italic">{entry.notes}</p>
                   )}
                 </div>
                 <ExerciseActions
@@ -621,7 +753,7 @@ export default function SessionLogPage() {
                 <div
                   key={set.id}
                   className={cn(
-                    'flex items-center gap-2 rounded-md px-2 py-1.5 text-sm',
+                    'flex items-center gap-2 rounded-md pl-2 py-0.5 text-sm min-h-10',
                     set.isSkipped
                       ? 'bg-muted/30 text-muted-foreground italic'
                       : set.isWarmup ? 'bg-muted/50 text-muted-foreground' : 'bg-muted'
@@ -639,10 +771,11 @@ export default function SessionLogPage() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-6 w-6 text-muted-foreground"
+                    className="h-9 w-9 text-muted-foreground"
                     onClick={() => deleteSet.mutate({ sessionId, setId: set.id })}
+                    aria-label={`Delete set ${set.setNumber}`}
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               ))}
@@ -671,7 +804,7 @@ export default function SessionLogPage() {
                   placeholder="Weight"
                   value={form.weight}
                   onChange={(e) => updateForm(entry.exerciseId, 'weight', e.target.value)}
-                  className="h-10 flex-1 text-center text-sm"
+                  className="h-11 min-w-0 flex-1 text-center"
                 />
                 <span className="text-xs text-muted-foreground shrink-0">×</span>
                 <Input
@@ -680,22 +813,24 @@ export default function SessionLogPage() {
                   placeholder="Reps"
                   value={form.reps}
                   onChange={(e) => updateForm(entry.exerciseId, 'reps', e.target.value)}
-                  className="h-10 w-20 text-center text-sm shrink-0"
+                  className="h-11 w-20 text-center shrink-0"
                 />
                 <Button
                   size="icon"
-                  className="h-10 w-10 shrink-0"
+                  className="h-11 w-11 shrink-0"
+                  aria-label="Log set"
                   onClick={() => handleLogSet(entry.exerciseId)}
                   disabled={!form.weight || !form.reps}
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-5 w-5" />
                 </Button>
                 {ghostSets.length > 0 && (
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-10 w-10 shrink-0 text-muted-foreground"
+                    className="h-11 w-11 shrink-0 text-muted-foreground"
                     onClick={() => handleSkipSet(entry.exerciseId)}
+                    aria-label="Skip set"
                     title="Skip set"
                   >
                     <SkipForward className="h-4 w-4" />
@@ -707,11 +842,19 @@ export default function SessionLogPage() {
         )
       })}
 
+      <button
+        type="button"
+        onClick={() => setAddingExercise(true)}
+        className="flex h-12 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-muted-foreground/30 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground active:bg-muted"
+      >
+        <Plus className="h-4 w-4" /> Add exercise
+      </button>
+
       {/* Session completion */}
       <Card>
         <CardContent className="p-4 space-y-3">
           <p className="text-sm font-medium">How do you feel?</p>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
             {[
               { score: 5, label: 'Great', color: 'bg-volume-safe' },
               { score: 4, label: 'Good', color: 'bg-volume-safe/60' },
@@ -723,7 +866,7 @@ export default function SessionLogPage() {
                 key={score}
                 onClick={() => handleFatigue(score)}
                 className={cn(
-                  'flex-1 rounded-md py-2 text-xs font-medium transition-colors',
+                  'h-11 flex-1 rounded-md text-xs font-medium transition-colors',
                   session.fatigueScore === score
                     ? `${color} text-black`
                     : 'bg-muted text-muted-foreground hover:bg-accent'
@@ -733,7 +876,7 @@ export default function SessionLogPage() {
               </button>
             ))}
           </div>
-          <Button className="w-full" onClick={handleFinish}>
+          <Button className="h-12 w-full text-base" onClick={handleFinish}>
             <Check className="mr-2 h-4 w-4" /> Finish Workout
           </Button>
         </CardContent>
@@ -748,6 +891,16 @@ export default function SessionLogPage() {
           onClose={() => setHistoryTarget(null)}
         />
       )}
+
+      <AddExerciseDialog
+        open={addingExercise}
+        workoutPlanId={workoutPlanId}
+        hasMesocycle={hasMesocycle}
+        excludeIds={new Set(exerciseOrder.map(e => e.exerciseId))}
+        onAddedLocally={(ex) => setExtraExercises(prev => [...prev, ex])}
+        onAdded={setScrollToExerciseId}
+        onClose={() => setAddingExercise(false)}
+      />
 
       {/* Replace Exercise Dialog */}
       <ReplaceExerciseDialog

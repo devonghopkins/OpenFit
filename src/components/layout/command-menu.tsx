@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Command } from 'cmdk'
 import {
-  LayoutDashboard,
   Dumbbell,
   Target,
   Calendar,
@@ -13,11 +12,10 @@ import {
 import { useUIStore } from '@/stores/ui-store'
 
 const pages = [
-  { name: 'Dashboard', icon: LayoutDashboard, path: '/' },
-  { name: 'Exercises', icon: Dumbbell, path: '/exercises' },
-  { name: 'Muscle Groups', icon: Target, path: '/muscle-groups' },
   { name: 'Programs', icon: Calendar, path: '/mesocycles' },
   { name: 'History', icon: ClipboardList, path: '/history' },
+  { name: 'Exercises', icon: Dumbbell, path: '/exercises' },
+  { name: 'Muscle Groups', icon: Target, path: '/muscle-groups' },
   { name: 'Analytics', icon: BarChart3, path: '/analytics' },
   { name: 'Settings', icon: Settings, path: '/settings' },
 ]

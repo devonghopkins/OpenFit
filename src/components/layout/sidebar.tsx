@@ -1,12 +1,12 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard,
   Dumbbell,
   Target,
   Calendar,
   ClipboardList,
   BarChart3,
   Settings,
+  Menu,
   PanelLeftClose,
   PanelLeft,
 } from 'lucide-react'
@@ -15,22 +15,21 @@ import { useUIStore } from '@/stores/ui-store'
 import { Button } from '@/components/ui/button'
 
 export const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/exercises', icon: Dumbbell, label: 'Exercises' },
-  { to: '/muscle-groups', icon: Target, label: 'Muscles' },
   { to: '/mesocycles', icon: Calendar, label: 'Programs' },
   { to: '/history', icon: ClipboardList, label: 'History' },
+  { to: '/exercises', icon: Dumbbell, label: 'Exercises' },
+  { to: '/muscle-groups', icon: Target, label: 'Muscles' },
   { to: '/analytics', icon: BarChart3, label: 'Analytics' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 
-// Bottom tab items for mobile (subset — max 5 for iOS-style tab bar)
+// Bottom tab bar on phones (max 5). Analytics and Settings live under More.
 export const mobileTabItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Home' },
-  { to: '/exercises', icon: Dumbbell, label: 'Exercises' },
-  { to: '/muscle-groups', icon: Target, label: 'Muscles' },
-  { to: '/mesocycles', icon: Calendar, label: 'Programs' },
-  { to: '/settings', icon: Settings, label: 'More' },
+  { to: '/mesocycles', icon: Calendar, label: 'Programs', also: ['/session'] },
+  { to: '/history', icon: ClipboardList, label: 'History', also: [] },
+  { to: '/exercises', icon: Dumbbell, label: 'Exercises', also: [] },
+  { to: '/muscle-groups', icon: Target, label: 'Muscles', also: [] },
+  { to: '/settings', icon: Menu, label: 'More', also: ['/analytics'] },
 ]
 
 export function Sidebar() {
@@ -45,7 +44,7 @@ export function Sidebar() {
     >
       <div className="flex h-14 items-center border-b px-4">
         {!sidebarCollapsed && (
-          <span className="text-lg font-bold tracking-tight">Hypertrophy</span>
+          <span className="text-lg font-bold tracking-tight">OpenFit</span>
         )}
         <Button
           variant="ghost"
@@ -85,26 +84,31 @@ export function Sidebar() {
 }
 
 export function MobileTabBar() {
+  const { pathname } = useLocation()
+
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-border/60 bg-[#111113]/95 backdrop-blur-lg" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-      <div className="flex items-center justify-around px-1">
-        {mobileTabItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              cn(
-                'flex flex-col items-center gap-0.5 py-2 px-3 text-[10px] transition-colors min-w-[56px]',
-                isActive
-                  ? 'text-foreground'
-                  : 'text-muted-foreground'
-              )
-            }
-          >
-            <item.icon className="h-5 w-5" />
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
+    <nav
+      className="md:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-border/60 bg-[#111113]/95 backdrop-blur-lg"
+      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+    >
+      <div className="flex items-stretch px-1">
+        {mobileTabItems.map((item) => {
+          const active =
+            pathname.startsWith(item.to) || item.also.some((p) => pathname.startsWith(p))
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={cn(
+                'flex flex-1 flex-col items-center gap-1 pt-2 pb-1.5 text-[11px] transition-colors',
+                active ? 'text-foreground' : 'text-muted-foreground'
+              )}
+            >
+              <item.icon className="h-[22px] w-[22px]" strokeWidth={active ? 2.25 : 1.75} />
+              <span className={cn(active && 'font-medium')}>{item.label}</span>
+            </NavLink>
+          )
+        })}
       </div>
     </nav>
   )

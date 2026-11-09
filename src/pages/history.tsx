@@ -3,7 +3,7 @@ import { useSessions } from '@/hooks/use-sessions'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { ClipboardList, Plus } from 'lucide-react'
+import { ClipboardList, Plus, ChevronRight } from 'lucide-react'
 import { useCreateSession } from '@/hooks/use-sessions'
 
 export default function HistoryPage() {
@@ -17,11 +17,11 @@ export default function HistoryPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight">History</h1>
-        <Button variant="outline" onClick={handleFreeformSession} className="shrink-0">
-          <Plus className="mr-2 h-4 w-4" /> Freeform
+        <Button variant="outline" onClick={handleFreeformSession} disabled={createSession.isPending} className="shrink-0">
+          <Plus className="mr-1.5 h-4 w-4" /> Freeform
         </Button>
       </div>
 
@@ -46,18 +46,18 @@ export default function HistoryPage() {
             return (
               <Card
                 key={session.id}
-                className="cursor-pointer transition-colors hover:border-muted-foreground/50"
+                className="cursor-pointer transition-colors hover:border-muted-foreground/50 active:bg-muted/30"
                 onClick={() => navigate(`/session/${session.id}`)}
               >
                 <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <span className="font-medium text-sm">
                           {session.workoutPlan?.label || 'Freeform'}
                         </span>
                         {session.completed && <Badge variant="safe" className="text-[10px]">Done</Badge>}
-                        {session.fatigueScore && (
+                        {!!session.fatigueScore && (
                           <Badge
                             variant={session.fatigueScore >= 4 ? 'safe' : session.fatigueScore >= 3 ? 'info' : 'warning'}
                             className="text-[10px]"
@@ -70,16 +70,17 @@ export default function HistoryPage() {
                         {new Date(session.date).toLocaleDateString('en-US', {
                           weekday: 'short', month: 'short', day: 'numeric',
                         })}
-                        {session.durationMinutes && <> &middot; {session.durationMinutes} min</>}
+                        {session.durationMinutes ? <> &middot; {session.durationMinutes} min</> : null}
                         {totalSets > 0 && <> &middot; {totalSets} sets</>}
                         {totalVolume > 0 && <> &middot; {Math.round(totalVolume).toLocaleString()} lb</>}
                       </p>
                       {exercises.length > 0 && (
-                        <p className="text-[11px] text-muted-foreground mt-1 truncate">
+                        <p className="text-xs text-muted-foreground mt-1 truncate">
                           {exercises.slice(0, 4).join(', ')}{exercises.length > 4 && ` +${exercises.length - 4} more`}
                         </p>
                       )}
                     </div>
+                    <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
                   </div>
                 </CardContent>
               </Card>

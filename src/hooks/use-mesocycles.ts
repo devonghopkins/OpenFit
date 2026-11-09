@@ -232,6 +232,7 @@ export function useAddExerciseToPlan() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mesocycles'] })
       qc.invalidateQueries({ queryKey: ['sessions'] })
+      qc.invalidateQueries({ queryKey: ['prescriptions'] })
     },
   })
 }
@@ -249,6 +250,7 @@ export function useAddExercisePropagated() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['mesocycles'] })
       qc.invalidateQueries({ queryKey: ['sessions'] })
+      qc.invalidateQueries({ queryKey: ['prescriptions'] })
     },
   })
 }
